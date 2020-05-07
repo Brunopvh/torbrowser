@@ -26,4 +26,4 @@ Necessário ter a ferramenta curl instalada em seu sistema.
    
    $ chmod +x tor.sh
    
-   $ tor.sh --install
+   $ ./tor.sh --install
