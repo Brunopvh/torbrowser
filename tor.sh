@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 #
-VERSION='2020-05-05'
+VERSION='2020-05-07'
 #
 #-----------------------| INFO |-------------------------------#
 # Este script baixa e instala a ultima versão do no em qualquer
 # distribuição linux. 
-#  Requerimentos:
-#     bash curl 
+#  Requerimentos: bash curl 
 #
 #-----------------------| GITHUB |-----------------------------#
 # https://github.com/Brunopvh/torbrowser
@@ -150,16 +149,24 @@ case "$1" in
 	-v|--version) echo -e "$(basename $0) V${VERSION}"; exit 0;;
 esac
 
-_msg "$(basename $0) V${VERSION}"
-#echo -e "$space_line"
-_msg "Aguarde"
+ShowLogo()
+{
+	local GithubScriptTor='https://github.com/Brunopvh/torbrowser'
+	
+	_msg "$space_line"
+	_msg "$(basename $0) V${VERSION}"
+	_msg "${Yellow}A${Reset}utor: Bruno Chaves"
+	_msg "${Yellow}G${Reset}ihub: $GithubScriptTor"
+	_msg "$space_line"
+}
 
-
+ShowLogo
 
 # url = domain/version/name
 # echo "${tor_server_dir:17:5}" -> Retornar 5 caracteres apartir da posição 17.
 # /dist/torbrowser/9.0.9/tor-browser-linux64-9.0.9_en-US.tar.xz
-# 
+#
+_msg "${Yellow}A${Reset}guarde" 
 tor_page='https://www.torproject.org/download/'
 tor_domain='https://dist.torproject.org/torbrowser'
 tor_html=$(grep -m 1 'torbrowser.*linux.*64.*tar' <<< $(curl -sSL "$tor_page"))
@@ -244,7 +251,7 @@ _unpack()
 
 	# Limpar o conteúdo do diretório antes de descomprimir.
 	cd "$dir_unpack" && rm -rf * 1> /dev/null
-	_msg "Descompactando: [$path_file]"
+	echo -ne "[>] Descompactando: $path_file "
 	#_msg "Destino: [$dir_unpack]"
 
 	# Detectar a extensão do arquivo.
@@ -269,6 +276,7 @@ _unpack()
 		'.zip') unzip "$path_file" -d "$dir_unpack" 1> /dev/null || return 1;;
 		*) return 1;;
 	esac
+	echo -e "${Yellow}OK${Reset}"
 	return 0
 }
 
@@ -304,7 +312,7 @@ _gpg_check()
 	
 	echo -ne "[>] Importando key "
 	if curl -Ss "$url_tor_key" -o - | gpg --import - 1> /dev/null 2>&1; then
-		echo "OK"
+		echo -e "${Yellow}OK${Reset}"
 	else
 		echo ' '
 		_red "Falha gpg --import"
@@ -319,7 +327,7 @@ _gpg_check()
 
 	echo -ne "[>] Executando: gpgv --keyring "
 	if gpgv --keyring $path_keyring $tor_path_file_asc $tor_path_file 1> /dev/null 2>&1; then
-		echo "OK"
+		echo -e "${Yellow}OK${Reset}"
 		return 0
 	else
 		echo ' '
@@ -362,7 +370,7 @@ _install_tor()
 	touch "${array_tor_dirs[tor_exec]}"
 	echo '#!/usr/bin/env bash' > "${array_tor_dirs[tor_exec]}" # ~/.local/bin/torbrowser
 	echo -e "\ncd ${array_tor_dirs[tor_destination]} \n"  >> "${array_tor_dirs[tor_exec]}"
-	echo './start-tor-browser.desktop' >> "${array_tor_dirs[tor_exec]}"
+	echo './start-tor-browser.desktop "$@"' >> "${array_tor_dirs[tor_exec]}"
 
 	# Gravar a versão atual no arquivo .desktop
 	echo -e "Version=${tor_version}" >> "${array_tor_dirs[tor_file_desktop]}"
@@ -374,7 +382,7 @@ _install_tor()
 	cp -u "${array_tor_dirs[tor_file_desktop]}" ~/'Área de trabalho'/ 2> /dev/null
 	cp -u "${array_tor_dirs[tor_file_desktop]}" ~/'Área de Trabalho'/ 2> /dev/null
 
-	_green "Configurando PATH"
+	_msg "Configurando PATH"
 	path_bash
 	path_zsh
 
@@ -387,7 +395,7 @@ _install_tor()
 
 	if _WHICH 'torbrowser'; then
 		_msg "TorBrowser instalado com sucesso"
-		torbrowser # Abrir o navegador.
+		#torbrowser # Abrir o navegador.
 	else
 		_red "Falha na instalação de TorBrowser"
 		return 1
@@ -408,9 +416,9 @@ _check_update()
 	
 	if [[ "$tor_version" != "$version_instaled" ]]; then
 		_msg "Nova versão disponível - $tor_version"
-		_msg "Preparando para fazer o download"
+		_msg "Baixando atualização"
 		_CURL "$tor_url_dow" "$tor_path_file"
-		_msg "Atualização baixada com sucesso use ${Yellow}--install${Reset} para instalar"
+		_msg "Atualização baixada com sucesso use ${Yellow}bash $(basename $0) --install${Reset} para instalar."
 	else
 		_msg "Não existem atualizações disponiveis"
 	fi
