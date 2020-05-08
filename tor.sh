@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-VERSION='2020-05-07'
+VERSION='2020-05-08'
 #
 #-----------------------| INFO |-------------------------------#
 # Este script baixa e instala a ultima versão do no em qualquer
@@ -395,7 +395,7 @@ _install_tor()
 
 	if _WHICH 'torbrowser'; then
 		_msg "TorBrowser instalado com sucesso"
-		#torbrowser # Abrir o navegador.
+		torbrowser # Abrir o navegador.
 	else
 		_red "Falha na instalação de TorBrowser"
 		return 1
