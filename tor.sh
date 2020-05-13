@@ -304,7 +304,7 @@ _gpg_check()
 	_CURL "$tor_url_asc" "$tor_path_file_asc" || return 1
 	
 	echo -ne "[>] Importando key "
-	if curl -Ss "$url_tor_key" -o - | gpg --import - 1> /dev/null; then
+	if curl -Ss "$url_tor_key" -o- | gpg --import - 1> /dev/null 2>&1; then
 		echo -e "${Yellow}OK${Reset}"
 	else
 		echo ' '
