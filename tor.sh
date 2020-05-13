@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-VERSION='2020-05-08'
+VERSION='2020-05-12'
 #
 #-----------------------| INFO |-------------------------------#
 # Este script baixa e instala a ultima versão do no em qualquer
@@ -13,7 +13,7 @@ VERSION='2020-05-08'
 #
 #-----------------------| Projeto Tor |-----------------------#
 # https://www.torproject.org/pt-BR/download/
-# https://terminalroot.com.br/2015/08/45-exemplos-de-variaveis-e-arrays-em_19.html
+#
 # 
 
 
@@ -219,6 +219,7 @@ path_zsh()
 }
 
 
+# Função para baixar os arquivos usando o "curl".
 _CURL()
 {
 	# $1 = url
@@ -228,12 +229,12 @@ _CURL()
 	local file="$2"
 
 	if [[ -f "$file" ]]; then
-		_msg "Arquivo encontrado em [$file]"
+		_msg "Arquivo encontrado em: $file"
 		return 0
 	fi
 
-	_msg "Baixando [$url]"
-	_msg "Destino [$file]"
+	_msg "Baixando: $url"
+	_msg "Destino: $file"
 
 	if curl -# -SL "$url" -o "$file"; then
 		return 0
@@ -252,9 +253,8 @@ _unpack()
 	# Limpar o conteúdo do diretório antes de descomprimir.
 	cd "$dir_unpack" && rm -rf * 1> /dev/null
 	echo -ne "[>] Descompactando: $path_file "
-	#_msg "Destino: [$dir_unpack]"
-
-	# Detectar a extensão do arquivo.
+	
+	# Detectar a extensão do arquivo a ser descomprimido.
 	if [[ "${path_file: -6}" == 'tar.gz' ]]; then      # tar.gz, 6 ultimos caracteres.
 		type_file='tar.gz'
 	elif [[ "${path_file: -7}" == 'tar.bz2' ]]; then   # tar.bz2
@@ -264,7 +264,7 @@ _unpack()
 	elif [[ "${path_file: -4}" == '.zip' ]]; then      # .zip
 		type_file='.zip'
 	else
-		_red "Arquivo não suportado: [$path_file]"
+		_red "Arquivo não suportado: $path_file"
 		return 1
 	fi
 
@@ -296,13 +296,6 @@ _gpg_check()
 		return 1
 	fi 
 
-	
-	# Verificar se gpgv está instalado no sistema.
-	if ! _WHICH 'gpgv'; then
-		_red "Instale o pacote [gpgv] para verificar assinaturas"
-		return 1
-	fi 
-
 
 	# Remover arquivo .keyring antigo se existir.
 	if [[ -f "$path_keyring" ]]; then rm "$path_keyring"; fi
@@ -311,7 +304,7 @@ _gpg_check()
 	_CURL "$tor_url_asc" "$tor_path_file_asc" || return 1
 	
 	echo -ne "[>] Importando key "
-	if curl -Ss "$url_tor_key" -o - | gpg --import - 1> /dev/null 2>&1; then
+	if curl -Ss "$url_tor_key" -o - | gpg --import - 1> /dev/null; then
 		echo -e "${Yellow}OK${Reset}"
 	else
 		echo ' '
@@ -332,7 +325,7 @@ _gpg_check()
 	else
 		echo ' '
 		_red "Falha na verificação de integridade, prosseguir com a instalação mesmo assim [s/n]?: "
-		read -t 10 -n 1 sn
+		read -t 15 -n 1 sn
 		[[ "${sn,,}" == 's' ]] || return 1
 		return 0
 	fi
@@ -341,20 +334,18 @@ _gpg_check()
 
 _install_tor()
 {
+	_CURL "$tor_url_dow" "$tor_path_file" || return 1
+
+	# O usuario passou o parâmetro --downloadonly.
+	if [[ "$DownloadOnly" == 'True' ]]; then
+		_msg "Feito somente download [--downloadonly]"
+		return 0
+	fi
+
 	if _WHICH 'torbrowser'; then
 		_msg "TorBrowser já instalado use ${Yellow}--remove${Reset} para desinstalar"
 		return 0
 	fi
-
-	_CURL "$tor_url_dow" "$tor_path_file" || return 1
-
-	for a in "${@}"; do
-		if [[ "$a" == '-d' ]] || [[ "$a" == '--downloadonly' ]]; then
-			_yellow "Somente baixar - $tor_path_file"
-			return 0
-			break
-		fi
-	done
 
 	_gpg_check || return 1
 	_unpack || return 1
@@ -386,18 +377,22 @@ _install_tor()
 	path_bash
 	path_zsh
 
-	Bash_Shell=$(command -v bash 2> /dev/null)
-	Zsh_Shell=$(command -v zsh 2> /dev/null)
+	# Ler as configurações do bash em ~/.bashrc
+	if _WHICH bash; then 
+		bash -c ". $HOME/.bashrc" 
+	fi
 
-	if [ -x "$Bash_Shell" ]; then bash -c ". $HOME/.bashrc"; fi
-	if [ -x "$Zsh_Shell" ]; then zsh -c ". ~/.zshrc"; fi
+	# Ler as configurações do zsh em ~/.zshrc
+	if _WHICH zsh; then 
+		zsh -c ". ~/.zshrc" 
+	fi
 
 
 	if _WHICH 'torbrowser'; then
 		_msg "TorBrowser instalado com sucesso"
 		torbrowser # Abrir o navegador.
 	else
-		_red "Falha na instalação de TorBrowser"
+		_red "Falha ao tentar instalar TorBrowser"
 		return 1
 	fi
 }
@@ -407,29 +402,38 @@ _install_tor()
 # Verificar se existe atualização disponível.
 _check_update()
 {
-	# Filtrar apenas a versão no arquivo .desktop
+	# Filtrar a versão instalada no sistema apartir do arquivo ".desktop".
 	if [[ -f "${array_tor_dirs[tor_file_desktop]}" ]]; then
 		version_instaled=$(grep '^Version=' "${array_tor_dirs[tor_file_desktop]}" | sed 's/.*=//g')
 	else
 		version_instaled='0'
 	fi
 	
+
 	if [[ "$tor_version" != "$version_instaled" ]]; then
-		_msg "Nova versão disponível - $tor_version"
+		_msg "Nova versão disponível: ${Yellow}$tor_version"
 		_msg "Baixando atualização"
-		_CURL "$tor_url_dow" "$tor_path_file"
-		_msg "Atualização baixada com sucesso use ${Yellow}bash $(basename $0) --install${Reset} para instalar."
+		_CURL "$tor_url_dow" "$tor_path_file" || return 1
+		_msg "Atualização baixada com sucesso use: ${Yellow}$(basename $0) --install${Reset} para instalar."
 	else
-		_msg "Não existem atualizações disponiveis"
+		_msg "Não existem atualizações disponíveis"
 	fi
 }
 
+# Verificar se o parâmetro "-d" ou "--downloadonly" foi passado na linha 
+# de comando, se encontrar este valor o script irá apenas baixar o tor.
+for arg in "$@"; do
+	if [[ "$arg" == '-d' ]] || [[ "$arg" == '--downloadonly' ]]; then
+		export DownloadOnly='True'
+		break
+	fi
+done 
 
 
 while [[ $1 ]]; do
 	case "$1" in
-		-d|--downloadonly) _CURL "$tor_url_dow" "$tor_path_file";;
-		-i|--install) _install_tor "$@";;
+		-d|--downloadonly) _install_tor "$@"; exit;;
+		-i|--install) _install_tor "$@"; exit;;
 		-u|--update) _check_update;;
 		*) usage; break;;
 	esac
