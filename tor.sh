@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-VERSION='2020-05-12'
+VERSION='2020-06-17'
 #
 #-----------------------| INFO |-------------------------------#
 # Este script baixa e instala a ultima versão do no em qualquer
@@ -41,17 +41,17 @@ _msg()
 
 _red()
 {
-	echo -e "${Red}[!] $@${Reset}"
+	echo -e "${Red}[!]${Reset} $@"
 }
 
 _green()
 {
-	echo -e "${Green}[*] $@${Reset}"
+	echo -e "${Green}[*]${Reset} $@"
 }
 
 _yellow()
 {
-	echo -e "${Yellow}[+] $@${Reset}"
+	echo -e "${Yellow}[+]${Reset} $@"
 }
 
 #=============================================================#
@@ -343,7 +343,7 @@ _install_tor()
 	fi
 
 	if _WHICH 'torbrowser'; then
-		_msg "TorBrowser já instalado use ${Yellow}--remove${Reset} para desinstalar"
+		_msg "TorBrowser já instalado use ${Yellow}$(readlink -f $0) --remove${Reset} para desinstalar"
 		return 0
 	fi
 
