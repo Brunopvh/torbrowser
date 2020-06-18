@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 #
-VERSION='2020-06-17'
+VERSION='2020-06-18'
 #
 #-----------------------| INFO |-------------------------------#
 # Este script baixa e instala a ultima versão do no em qualquer
 # distribuição linux. 
-#  Requerimentos: bash curl 
+#-----------------------| Requerimentos |---------------------# 
+# bash, curl 
 #
 #-----------------------| GITHUB |-----------------------------#
 # https://github.com/Brunopvh/torbrowser
 # git clone https://github.com/Brunopvh/torbrowser.git
+# 
 #
 #-----------------------| Projeto Tor |-----------------------#
 # https://www.torproject.org/pt-BR/download/
@@ -23,15 +25,6 @@ Yellow='\033[0;33m'
 White='\033[0;37m'
 Reset='\033[m'
 
-#=============================================================#
-_c()
-{
-	if [[ -z $2 ]]; then
-		echo -e "\033[1;$1m"
-	elif [[ $2 ]]; then
-		echo -e "\033[$2;$1m"
-	fi
-}
 
 #=============================================================#
 _msg()
@@ -67,6 +60,7 @@ cat << EOF
        -v|--version            Mostra a versão deste programa.
        -d|--downloadonly       Apenas baixa o torbrowser.
        -u|--update             Baixar atualização do navegador Tor se houver atualização disponivel.
+       -U|--self-update        Atualiza este script, baixa a ultima versão do github.
 EOF
 exit 0
 }
@@ -115,6 +109,8 @@ mkdir -p "$dir_dow"
 mkdir -p "$dir_temp"
 mkdir -p "$dir_unpack"
 
+# Este script
+script_root=$(readlink -f "$0")
 
 declare -A array_tor_dirs
 array_tor_dirs=(
@@ -141,12 +137,59 @@ _uninstall()
 	done
 }
 
-#=============================================================#
 
+__self_update__()
+{
+	# Esta função serve para atualizar o script atual NÃO o navegador.
+	# verificar se existe atualização deste script no github disponível
+	local url_script_torbrowser_master='https://raw.github.com/Brunopvh/torbrowser/master/tor.sh'
+	local script_master_update="$dir_temp/tor.update.sh"
+	
+	_yellow "Buscando atualização"
+	if ! curl -sSLf "$url_script_torbrowser_master" -o "$script_master_update"; then
+		_red "Falha: curl"
+		return 1
+	fi
+
+	chmod +x "$script_master_update"
+	newVersion=$("$script_master_update" --version | cut -d ' ' -f 2 | sed 's/V//g')
+	_yellow "Versão local ----> $VERSION"
+	_yellow "Versão github ---> $newVersion"
+	sleep 0.25
+	if [[ "$newVersion" == "$VERSION" ]]; then
+		_yellow "Você já tem a ultima versão deste script"
+		return 0
+	fi
+
+	if [[ ! -w "$script_root" ]]; then
+		_red "Você não tem permissão de escrita (-w) no arquivo: $script_root"
+		return 1
+	fi
+
+	_yellow "Instalando atualização"
+	mv "$script_root" "${script_root}.old"
+	cp  "$script_master_update" "$script_root"
+	_green "OK"
+}
+
+#=============================================================#
+# Os argumentos abaixo podem ser executados sem obter informações
+# do Tor online por meio da pagina de download do program. Os outros
+# argumentos/funções que este script disponibiliza precisa de mais
+# informações sobre o navegador e para isso e necessário fazer uma
+# requisição web no site: https://www.torproject.org/download/
+#    Esta separação de argumentos no script faz com que ele seja
+# mais rápido, por exemplo para vizualizar a versão "-v" não e
+# necessário fazer uma requisição WEB basta echoar a variável
+# VERSION, o mesmo serve para os demais argumentos enter o case e
+# esac logo abaixo.
+#
+#=============================================================#
 case "$1" in
 	-h|--help) usage; exit;;
 	-r|--remove) _uninstall; exit;;
 	-v|--version) echo -e "$(basename $0) V${VERSION}"; exit 0;;
+	-U|--self-update) __self_update__; exit;;
 esac
 
 ShowLogo()
