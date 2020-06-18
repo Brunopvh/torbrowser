@@ -39,7 +39,7 @@ _red()
 
 _green()
 {
-	echo -e "${Green}[*]${Reset} $@"
+	echo -e "${Green}[~]${Reset} $@"
 }
 
 _yellow()
@@ -167,8 +167,8 @@ __self_update__()
 	fi
 
 	_yellow "Instalando atualização"
-	mv "$script_root" "${script_root}.old"
-	cp  "$script_master_update" "$script_root"
+	#mv "$script_root" "${script_root}.old"
+	mv  "$script_master_update" "$script_root"
 	_green "OK"
 }
 
