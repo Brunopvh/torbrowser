@@ -451,15 +451,14 @@ _check_update()
 	else
 		version_instaled='0'
 	fi
-	
 
 	if [[ "$tor_version" != "$version_instaled" ]]; then
-		_msg "Nova versão disponível: ${Yellow}$tor_version"
-		_msg "Baixando atualização"
+		_yellow "Nova versão disponível: $tor_version"
+		_yellow "Baixando atualização"
 		_CURL "$tor_url_dow" "$tor_path_file" || return 1
-		_msg "Atualização baixada com sucesso use: ${Yellow}$(basename $0) --install${Reset} para instalar."
+		_msg "Atualização baixada com sucesso, use: ${Yellow}$(readlink -f $0) --install${Reset}"
 	else
-		_msg "Não existem atualizações disponíveis"
+		_msg "Nenhuma atualização disponível para o Navegador Tor"
 	fi
 }
 
