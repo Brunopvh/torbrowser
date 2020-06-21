@@ -22,6 +22,7 @@ VERSION='2020-06-18'
 Red='\033[0;31m'
 Green='\033[0;32m'
 Yellow='\033[0;33m'
+Blue='\033[0;34m'
 White='\033[0;37m'
 Reset='\033[m'
 
@@ -45,6 +46,11 @@ _green()
 _yellow()
 {
 	echo -e "${Yellow}[+]${Reset} $@"
+}
+
+_blue()
+{
+	echo -e "${Blue}[~]${Reset} $@"
 }
 
 #=============================================================#
@@ -272,14 +278,14 @@ _CURL()
 	local file="$2"
 
 	if [[ -f "$file" ]]; then
-		_msg "Arquivo encontrado em: $file"
+		_blue "Arquivo encontrado em: $file"
 		return 0
 	fi
 
-	_msg "Baixando: $url"
-	_msg "Destino: $file"
-
-	if curl -# -SL "$url" -o "$file"; then
+	_blue "Baixando: $url"
+	_blue "Destino: $file"
+	echo ' '
+	if curl -SL "$url" -o "$file"; then
 		return 0
 	else
 		_red "Falha no download"
