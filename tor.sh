@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-VERSION='2020-10-10'
+VERSION='2020-10-12'
 #
 #-----------------------| INFO |-------------------------------#
 # Este script baixa e instala a ultima versão do no em qualquer
@@ -117,7 +117,8 @@ fi
 # Arquivos e diretórios
 #=============================================================#
 dir_dow="$HOME/.cache/downloads"
-dir_temp="/tmp/space_tor_$USER"
+#dir_temp="/tmp/space_tor_$USER"
+dir_temp=$(mktemp --directory)
 dir_unpack="$dir_temp/unpack"
 
 mkdir -p "$HOME/.local/bin"
