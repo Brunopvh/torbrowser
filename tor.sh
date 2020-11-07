@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-VERSION='2020-10-12'
+VERSION='2020-11-06'
 #
 #-----------------------| INFO |-------------------------------#
 # Este script baixa e instala a ultima versão do no em qualquer
@@ -28,29 +28,34 @@ Reset='\033[m'
 
 
 #=============================================================#
+space_line()
+{
+	printf "%-$(tput cols)s" | tr ' ' '-'
+}
+
 _msg()
 {
-	echo -e "[>] $@"
+	echo -e " $@"
 }
 
 _red()
 {
-	echo -e "${Red}[!]${Reset} $@"
+	echo -e "${Red} ! ${Reset} $@"
 }
 
 _green()
 {
-	echo -e "${Green}[~]${Reset} $@"
+	echo -e "${Green} + ${Reset} $@"
 }
 
 _yellow()
 {
-	echo -e "${Yellow}[+]${Reset} $@"
+	echo -e "${Yellow} + ${Reset} $@"
 }
 
 _blue()
 {
-	echo -e "${Blue}[~]${Reset} $@"
+	echo -e "${Blue} + ${Reset} $@"
 }
 
 #=============================================================#
@@ -73,7 +78,6 @@ exit 0
 
 [[ -z $1 ]] && usage
 
-#=============================================================#
 # Verifiacar se um executável existe
 is_executable()
 {
@@ -85,18 +89,6 @@ is_executable()
 	fi
 }
 
-if is_executable tput; then
-	colum=$(tput cols)
-else
-	colum='45'
-fi
-
-space_line()
-{
-	for c in $(seq "$colum"); do
-		printf '-'
-	done
-}
 
 #=============================================================#
 # Requisitos
@@ -117,7 +109,6 @@ fi
 # Arquivos e diretórios
 #=============================================================#
 dir_dow="$HOME/.cache/downloads"
-#dir_temp="/tmp/space_tor_$USER"
 dir_temp=$(mktemp --directory)
 dir_unpack="$dir_temp/unpack"
 
@@ -214,11 +205,11 @@ ShowLogo()
 {
 	local GithubScriptTor='https://github.com/Brunopvh/torbrowser'
 	
-	echo -e "$(space_line)"
+	space_line
 	_msg "$(basename $0) V${VERSION}"
 	_msg "${Yellow}A${Reset}utor: Bruno Chaves"
-	_msg "${Yellow}G${Reset}ihub: $GithubScriptTor"
-	echo -e "$(space_line)"
+	_msg "${Yellow}G${Reset}ithub: $GithubScriptTor"
+	space_line
 }
 
 ShowLogo
@@ -227,7 +218,7 @@ ShowLogo
 # echo "${tor_server_dir:17:5}" -> Retornar 5 caracteres apartir da posição 17.
 # /dist/torbrowser/9.0.9/tor-browser-linux64-9.0.9_en-US.tar.xz
 #
-_msg "${Yellow}A${Reset}guarde" 
+_blue "Aguarde" 
 tor_page='https://www.torproject.org/download/'
 tor_domain='https://dist.torproject.org/torbrowser'
 tor_html=$(grep -m 1 'torbrowser.*linux.*64.*tar' <<< $(curl -sSL "$tor_page"))
@@ -253,7 +244,7 @@ path_bash()
 {
 	# Criar o arquivo ~/.bashrc se não existir
 	if [ ! -f "$HOME/.bashrc" ]; then
-		echo ' ' >> "$HOME/.bashrc"
+		touch "$HOME/.bashrc"
 	fi
 
 	# Se a linha de configuração já existir, encerrar a função aqui.
@@ -268,7 +259,7 @@ path_zsh()
 {
 	# Criar o arquivo ~/.zshrc se não existir
 	if [ ! -f "$HOME/.zshrc" ]; then
-		echo ' ' >> "$HOME/.zshrc"
+		touch "$HOME/.zshrc"
 	fi
 
 	# Se a linha de configuração já existir, encerrar a função aqui.
@@ -290,12 +281,12 @@ _CURL()
 	local file="$2"
 
 	if [[ -f "$file" ]]; then
-		_blue "Arquivo encontrado em: $file"
+		_blue "Arquivo encontrado ... $file"
 		return 0
 	fi
 
-	_blue "Baixando: $url"
-	_blue "Destino: $file"
+	_blue "Baixando ... $url"
+	_blue "Destino ... $file"
 	echo ' '
 	if curl -SL "$url" -o "$file"; then
 		return 0
