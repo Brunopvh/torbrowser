@@ -26,6 +26,11 @@ _red()
 	echo -e "${Red} $@${Reset}"
 }
 
+_yellow()
+{
+	echo -e "${Yellow} $@${Reset}"
+}
+
 # Verifiacar se um executável existe
 is_executable()
 {
@@ -266,10 +271,9 @@ _self_update()
 	local url_script_torbrowser_master='https://raw.github.com/Brunopvh/torbrowser/master/dev/tor-dev.sh'
 	local script_master_update="$DIR_TEMP/tor.update"
 	
-	#printf "Executando ... curl -sSLf $url_script_torbrowser_master -o $script_master_update "
-	printf "Executando ... aria2c $url_script_torbrowser_master --dir=$DIR_TEMP --out=tor.update "
+	printf "Executando ... curl -sSLf $url_script_torbrowser_master -o $script_master_update "
 	
-	if aria2c "$url_script_torbrowser_master" --dir="$DIR_TEMP" --out="tor.update" 1> /dev/null; then
+	if curl -sSLf $url_script_torbrowser_master -o $script_master_update; then
 		printf "OK\n"
 	else
 		_red "FALHA"
@@ -284,7 +288,7 @@ _self_update()
 	
 	if [[ "$newVersion" == "$__version__" ]]; then
 		printf "Você já tem a ultima versão deste script\n"
-		#return 0
+		return 0
 	fi
 
 	if [[ ! -w $(readlink -f "$0") ]]; then
