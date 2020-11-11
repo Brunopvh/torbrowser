@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-__version__='2020_11_09'
+__version__='2020_11_10'
 
 Red='\033[0;31m'
 Green='\033[0;32m'
@@ -48,7 +48,7 @@ cat << EOF
        -r|--remove             Desistala o torbrowser.
        -v|--version            Mostra a versão deste programa.
        -d|--downloadonly       Apenas baixa o torbrowser.
-       -u|--update             Baixar atualização do navegador Tor se houver atualização disponivel.
+       -u|--update             Baixar atualização do navegador Tor.
        -U|--self-update        Atualiza este script, baixa a ultima versão do github.
 EOF
 exit 0
@@ -78,13 +78,10 @@ _appname='torbrowser-shell-installer'
 __script__=$(readlink -f "$0")
 dir_of_executable=$(dirname "$__script__")
 
-#DIR_TEMP=$(mktemp --directory)
-DIR_TEMP="/tmp/$USER"
+DIR_TEMP=$(mktemp --directory)
 HtmlTemporaryFile="$DIR_TEMP/temp.html" # Arquivo temporário para baixar o contéudo html.
 DIR_DOWNLOAD=~/.cache/"$_appname"
 DIR_UNPACK="$DIR_TEMP/unpack"
-
-mkdir -p "$DIR_TEMP" || return 1
 
 Dirs=(
 	~/.local/bin
@@ -123,7 +120,7 @@ url_download_package=''
 
 _strip()
 {
-	# Função para eliminar todos os espaços de uma string.
+	# Função para apagar todos os espaços de uma string.
 	local string="$1"
 	while true; do
 		echo -e "$string" | grep -q ' ' || break
@@ -145,6 +142,8 @@ _gethtml()
 		return 1
 	}
 	
+	printf "(_gethtml) aguarde...\n"
+	
 	if curl -sSL "$1" -o "$HtmlTemporaryFile"; then
 		printf "Página web salva em ... $HtmlTemporaryFile\n"
 		return 0
@@ -156,10 +155,10 @@ _gethtml()
 
 get_tor_meta()
 {
+	# Obter informações de download.
 	# URL = domain/version/name
-	printf "Aguarde...\n"
+	_gethtml 'https://www.torproject.org/download/'
 	tor_domain='https://dist.torproject.org/torbrowser'
-	tor_html_page=$(_gethtml 'https://www.torproject.org/download/')
 	tor_url_server=$(grep 'en-US' "$HtmlTemporaryFile" | grep -m 1 'torbrowser.*linux.*64.*tar' | cut -d '"' -f 4)
 	tor_file_name=$(basename "$tor_url_server")
 	tor_online_version=$(echo "$tor_url_server" | cut -d '/' -f 4)
@@ -216,7 +215,7 @@ function _install_tor()
 {
 
 	if [[ -d "${TorDestinationFiles[tor_dir]}" ]]; then
-		_msg "TorBrowser está instalado em use: ${Yellow}$(readlink -f $0) --remove${Reset} para desinstalar."
+		_msg "TorBrowser está instalado use: ${Yellow}$(readlink -f $0) --remove${Reset} para desinstalar."
 		return 0
 	fi
 
@@ -264,30 +263,41 @@ _self_update()
 {
 	# Esta função serve para atualizar o script atual NÃO o navegador.
 	# verificar se existe atualização deste script no github disponível
-	local url_script_torbrowser_master='https://raw.github.com/Brunopvh/torbrowser/master/tor.sh'
+	local url_script_torbrowser_master='https://raw.github.com/Brunopvh/torbrowser/master/dev/tor-dev.sh'
 	local script_master_update="$DIR_TEMP/tor.update"
 	
-	printf "Executando ... curl -sSLf $url_script_torbrowser_master -o $script_master_update\n"
+	#printf "Executando ... curl -sSLf $url_script_torbrowser_master -o $script_master_update "
+	printf "Executando ... aria2c $url_script_torbrowser_master --dir=$DIR_TEMP --out=tor.update "
 	
-	newVersion="$__version__"
+	if aria2c "$url_script_torbrowser_master" --dir="$DIR_TEMP" --out="tor.update" 1> /dev/null; then
+		printf "OK\n"
+	else
+		_red "FALHA"
+		return 1
+	fi
+	
+	# newVersion=$(grep -m 1 '__version__' "$script_master_update" | sed 's/[Aa-Zz]\+//g;s/[[:punct:]]//g')
+	newVersion=$(grep -m 1 '__version__' "$script_master_update" | sed "s/.*=//g;s/[Aa-Zz]\+//g;s/'//g")
+
 	printf "%-18s%12s\n" "Versão local" "$__version__"
 	printf "%-18s%12s\n" "Versão github" "$newVersion"
 	
-	return
-	if [[ "$newVersion" == "$VERSION" ]]; then
-		_yellow "Você já tem a ultima versão deste script"
-		return 0
+	if [[ "$newVersion" == "$__version__" ]]; then
+		printf "Você já tem a ultima versão deste script\n"
+		#return 0
 	fi
 
-	if [[ ! -w "$script_root" ]]; then
-		_red "Você não tem permissão de escrita (-w) no arquivo: $script_root"
+	if [[ ! -w $(readlink -f "$0") ]]; then
+		_red "Você não tem permissão de escrita (-w) no arquivo: $(readlink -f $0)"
 		return 1
 	fi
 
+	printf "Criando backup ... ${__script__}-$(date +%H_%M_%S).old\n"
+	cp $(readlink -f "$0") "${__script__}-$(date +%H_%M_%S).old"
+	
 	_yellow "Instalando atualização"
-	#mv "$script_root" "${script_root}.old"
-	mv  "$script_master_update" "$script_root"
-	_green "OK"
+	mv  "$script_master_update" "$__script__"
+	printf "OK\n"
 }
 
 main()
