@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-__version__='2020_11_10'
+__version__='2020_11_13'
 
 Red='\033[0;31m'
 Green='\033[0;32m'
@@ -74,6 +74,11 @@ if ! is_executable 'curl'; then
 	exit 1
 fi
 
+# Necessário ter a ferramenta Curl.
+if ! is_executable 'gpg'; then
+	_red "Instale a ferramenta: gpg"
+	exit 1
+fi
 
 if [[ -f ~/.bashrc ]]; then
 	. ~/.bashrc
@@ -84,6 +89,7 @@ __script__=$(readlink -f "$0")
 dir_of_executable=$(dirname "$__script__")
 
 DIR_TEMP=$(mktemp --directory)
+#DIR_TEMP="$HOME/Downloads/TOR"
 HtmlTemporaryFile="$DIR_TEMP/temp.html" # Arquivo temporário para baixar o contéudo html.
 DIR_DOWNLOAD=~/.cache/"$_appname"
 DIR_UNPACK="$DIR_TEMP/unpack"
@@ -122,6 +128,7 @@ TorDestinationFiles=(
 tor_file_name=''
 tor_online_version=''
 url_download_package=''
+url_download_file_asc=''
 
 _strip()
 {
@@ -147,7 +154,7 @@ _gethtml()
 		return 1
 	}
 	
-	printf "(_gethtml) aguarde...\n"
+	printf "Baixando ... $1\n"
 	
 	if curl -sSL "$1" -o "$HtmlTemporaryFile"; then
 		printf "Página web salva em ... $HtmlTemporaryFile\n"
@@ -164,12 +171,46 @@ get_tor_meta()
 	# URL = domain/version/name
 	_gethtml 'https://www.torproject.org/download/'
 	tor_domain='https://dist.torproject.org/torbrowser'
-	tor_url_server=$(grep 'en-US' "$HtmlTemporaryFile" | grep -m 1 'torbrowser.*linux.*64.*tar' | cut -d '"' -f 4)
-	tor_file_name=$(basename "$tor_url_server")
-	tor_online_version=$(echo "$tor_url_server" | cut -d '/' -f 4)
+	url_tor_server=$(grep 'en-US' "$HtmlTemporaryFile" | grep -m 1 'torbrowser.*linux.*64.*tar' | cut -d '"' -f 4)
+	tor_file_name=$(basename "$url_tor_server")
+	tor_online_version=$(echo "$url_tor_server" | cut -d '/' -f 4)
 	
-	# Definir o url de download apartir dos dados obtidos.
+	# Definir o url de download apartir dos dados obtidos => dominio/versão/pacote-tar.
 	url_download_package="https://dist.torproject.org/torbrowser/$tor_online_version/$tor_file_name"
+	url_download_file_asc="${url_download_package}.asc"
+}
+
+check_gpg()
+{
+	# Verificar integridade do arquivo baixado
+	# https://support.torproject.org/tbb/how-to-verify-signature/
+	# gpg --auto-key-locate nodefault,wkd --locate-keys torbrowser@torproject.org
+	# gpg --output ./tor.keyring --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290
+
+	local url_key_pub='https://openpgpkey.torproject.org/.well-known/openpgpkey/torproject.org/hu/kounek7zrdx745qydx6p59t9mqjpuhdf'
+
+	# Adicionar key pub
+	printf "Executando ... importando key "
+	if curl -s "$url_key_pub" | gpg --import - 1> /dev/null 2>&1; then
+		printf 'OK\n'
+	else
+		_red "(check_gpg): Falha"
+		return 1
+	fi
+
+	gpg --output "$DIR_TEMP/tor.keyring" --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290 || {
+		_red "Falha ao tentar criar o arquivo tor.keyring"
+		return 1
+	}
+
+	curl -sSL "$url_download_file_asc" -o "$DIR_TEMP/tor.asc" || return 1
+	printf "Verificando integridade ... "
+	if gpgv --keyring "$DIR_TEMP/tor.keyring" "$DIR_TEMP/tor.asc" "$DIR_DOWNLOAD/$tor_file_name" 1> /dev/null 2>&1; then
+		printf 'OK\n'
+	else
+		_red "Falha"
+		return 1
+	fi
 }
 
 _download_tor()
@@ -226,6 +267,7 @@ function _install_tor()
 
 	get_tor_meta || return 1
 	_download_tor || return 1
+	check_gpg || return 1
 	_unpack_tor	|| return 1
 	
 	cd "$DIR_UNPACK"
@@ -238,6 +280,7 @@ function _install_tor()
 	./start-tor-browser.desktop --register-app # Gerar arquivo .desktop
 
 	# Gerar script para chamada via linha de comando.
+	printf "Criando script para execução em linha de comando\n"
 	touch "${TorDestinationFiles[tor_exec]}"
 	echo '#!/bin/sh' > "${TorDestinationFiles[tor_exec]}" # ~/.local/bin/torbrowser
 	echo -e "\ncd ${TorDestinationFiles[tor_dir]} \n"  >> "${TorDestinationFiles[tor_exec]}"
