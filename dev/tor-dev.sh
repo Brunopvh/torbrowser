@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-__version__='2020_12_11'
+__version__='2020_12_12'
 __appname__='torbrowser-installer'
 __script__=$(readlink -f "$0")
 
@@ -11,15 +11,35 @@ CBlue='\033[0;34m'
 CWhite='\033[0;37m'
 CReset='\033[m'
 
+# Usuário não pode ser o root.
+if [[ $(id -u) == '0' ]]; then
+	printf "${CRed}Usuário não pode ser o 'root' saindo...${CRese}\n"
+	exit 1
+fi
+
 TemporaryDir="$(mktemp --directory)-torbrowser-installer"
 TemporaryFile=$(mktemp)
 DIR_UNPACK="$TemporaryDir/unpack"
-DIR_DOWNLOAD=~/".cache/$__appname__/download"
-
+DIR_DOWNLOAD=~/.cache/$__appname__/download
 mkdir -p "$DIR_DOWNLOAD"
 mkdir -p "$DIR_UNPACK"
+mkdir -p ~/.local/share/applications
 
-space_line()
+declare -A TorDestinationFiles
+TorDestinationFiles=(
+	[tor_destination]=~/".local/bin/torbrowser-amd64"
+	[tor_executable]=~/".local/bin/torbrowser"
+	[tor_file_desktop]=~/".local/share/applications/start-tor-browser.desktop"
+)
+
+tor_online_path=''
+tor_online_version=''
+tor_name_file=''
+tor_name_file_asc=''
+url_download_torbrowser=''
+url_download_torbrowser_asc=''
+
+print_line()
 {
 	printf "%-$(tput cols)s" | tr ' ' '-'
 }
@@ -61,7 +81,6 @@ __rmdir__()
 		sleep 0.08
 	done
 }
-
 
 _show_loop_procs()
 {
@@ -147,7 +166,7 @@ _unpack()
 	fi	
 
 	# echo -e "$(date +%H:%M:%S)"
-	_show_loop_procs "$!" "Descompactando ($len_file) | $(basename $path_file)"
+	_show_loop_procs "$!" "Descompactando ($len_file) ... $(basename $path_file)"
 
 	# Verificar se a extração foi concluida com sucesso.
 	if [[ "$?" != '0' ]]; then
@@ -297,30 +316,77 @@ _get_html_page()
 	rm -rf "$temp_file_html" 2> /dev/null
 }
 
-declare -A array_tor_dirs
-array_tor_dirs=(
-	[tor_destination]=~/".local/bin/torbrowser-amd64"
-	[tor_exec]=~/".local/bin/torbrowser"
-	[tor_file_desktop]=~/".local/share/applications/start-tor-browser.desktop"
-)
+_set_tor_data()
+{
+	# url = domain/version/name
+	# /dist/torbrowser/9.0.9/tor-browser-linux64-9.0.9_en-US.tar.xz
+	printf "Obtendo informações online em ... https://www.torproject.org/download\n"
+	tor_page='https://www.torproject.org/download'
+	tor_domain='https://dist.torproject.org/torbrowser'
+	# tor_online_path=$(_get_html_page "$tor_page" --find 'torbrowser.*linux.*64.*tar' | sed 's/.*="//g;s/">.*//g') 
+	tor_online_path=$(_get_html_page "$tor_page" --find 'torbrowser.*linux.*en-US.*tar' | sed 's/.*="//g;s/">.*//g') 
+	tor_name_file=$(basename $tor_online_path)
+	tor_name_file_asc="${tor_name_file}.asc"
+	tor_online_version=$(echo $tor_online_path | cut -d '/' -f 4)
+	url_download_torbrowser="$tor_domain/$tor_online_version/$tor_name_file"
+	url_download_torbrowser_asc="${url_download_torbrowser}.asc"
+}
 
+_install_torbrowser()
+{
+	# https://support.torproject.org/tbb/how-to-verify-signature/
+	# gpg --auto-key-locate nodefault,wkd --locate-keys torbrowser@torproject.org
+	# gpg --output ./tor.keyring --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290
 
+	local url_tor_gpgkey='https://openpgpkey.torproject.org/.well-known/openpgpkey/torproject.org/hu/kounek7zrdx745qydx6p59t9mqjpuhdf'
+	local path_tor_gpgkey="$TemporaryDir/tor.keyring"
+	local tor_path_file_asc="$DIR_DOWNLOAD/$tor_name_file_asc"
+	
+	__download__ "$url_download_torbrowser" "$DIR_DOWNLOAD/$tor_name_file" || return 1
+	__download__ "$url_download_torbrowser_asc" "$tor_path_file_asc" || return 1
+
+	# O usuario passou o parâmetro --downloadonly.
+	if [[ "$DownloadOnly" == 'True' ]]; then
+		printf "Feito somente download [--downloadonly]\n"
+		return 0
+	fi
+
+	if is_executable 'torbrowser'; then
+		printf "Já instalado use ${CYellow}$__script__ --remove${CReset} para desinstalar o tor.\n"
+		#return 0
+	fi
+
+	print_line
+	gpg_import "$url_tor_gpgkey" || return 1
+	printf "Gerando arquivo ... $path_tor_gpgkey\n"	
+	gpg --output "$path_tor_gpgkey" --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290 || {
+		printf "${CRed}Falha ao tentar gerar o arquivo $path_tor_gpgkey${CReset}\n"
+		return 1
+	}
+
+	printf "Executando ... gpgv --keyring "
+	if gpgv --keyring $path_tor_gpgkey $tor_path_file_asc $DIR_DOWNLOAD/$tor_name_file 1> /dev/null 2>&1; then
+		printf "OK\n"
+	else
+		printf "${CRed}Falha${CReset}\n"
+	fi
+
+	return
+	_unpack "$DIR_DOWNLOAD/$tor_name_file" || return 1
+
+}
+
+main()
+{
+	_set_tor_data
+	_install_torbrowser
+}
+
+main "$@"
+
+exit
 # url = domain/version/name
 # echo "${tor_server_dir:17:5}" -> Retornar 5 caracteres apartir da posição 17.
 # /dist/torbrowser/9.0.9/tor-browser-linux64-9.0.9_en-US.tar.xz
 
-tor_page='https://www.torproject.org/download/'
-tor_domain='https://dist.torproject.org/torbrowser'
-tor_html=$(_get_html_page "$tor_page" --find 'torbrowser.*linux.*64.*tar') 
-tor_server_dir=$(echo $tor_html | sed 's/.*="//g;s/">.*//g')
-tor_file_name="$(basename $tor_server_dir)"
-tor_version=$(echo "$tor_server_dir" | cut -d '/' -f 4)
-tor_url_dow="$tor_domain/$tor_version/$tor_file_name" # Formar a URL apartir dos dados obtidos.
 tor_url_asc="${tor_url_dow}.asc"
-
-tor_path_file="$dir_dow/$tor_file_name" # Local onde o arquivo será baixado.
-tor_path_file_asc="${tor_path_file}.asc"
-
-echo $tor_server_dir
-echo $tor_file_name
-echo $tor_url_dow
