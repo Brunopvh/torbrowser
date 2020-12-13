@@ -24,6 +24,7 @@ DIR_DOWNLOAD=~/.cache/$__appname__/download
 mkdir -p "$DIR_DOWNLOAD"
 mkdir -p "$DIR_UNPACK"
 mkdir -p ~/.local/share/applications
+mkdir -p ~/.local/bin
 
 declare -A TorDestinationFiles
 TorDestinationFiles=(
@@ -59,6 +60,35 @@ is_executable()
 		return 1
 	fi
 }
+
+usage()
+{
+cat << EOF
+     Use: __script__ --help|--install|--remove|--version|--downloadonly
+
+       -h|--help               Mostra ajuda.
+       -i|--install            Instala a ultima versão do torbrowser.
+       -r|--remove             Desistala o torbrowser.
+       -v|--version            Mostra a versão deste programa.
+       -d|--downloadonly       Apenas baixa o torbrowser.
+       -u|--update             Baixar atualização do navegador Tor se houver atualização disponivel.
+       -U|--self-update        Atualiza este script, baixa a ultima versão do github.
+EOF
+exit 0
+}
+
+ShowLogo()
+{
+	local RepoTorbrowserInstaller='https://github.com/Brunopvh/torbrowser'
+	print_line
+	echo -e "$__appname__ V$__version__"
+	echo -e "${CYellow}A${CReset}utor: Bruno Chaves"
+	echo -e "${CYellow}G${CReset}ithub: $RepoTorbrowserInstaller"
+	print_line
+}
+
+ShowLogo
+
 
 __rmdir__()
 {
@@ -172,6 +202,21 @@ _unpack()
 	if [[ "$?" != '0' ]]; then
 		printf "${CRed}(_unpack): Descompressão falhou.${CReset}\n"
 		__rmdir__ "$path_file"
+		return 1
+	fi
+}
+
+_ping()
+{
+	printf "Aguardando conexão ... "
+
+	if ping -c 1 8.8.8.8 1> /dev/null 2>&1; then
+		printf "Conectado\n"
+		return 0
+	else
+		printf "\033[0;31mFALHA\033[m\n"
+		printf "\033[0;31mAVISO: você está OFF-LINE\033[m\n"
+		sleep 1
 		return 1
 	fi
 }
@@ -316,14 +361,71 @@ _get_html_page()
 	rm -rf "$temp_file_html" 2> /dev/null
 }
 
+configure_bashrc()
+{
+	[[ -z $HOME ]] && HOME=~/
+
+	# Inserir ~/.local/bin em PATH.
+	echo "$PATH" | grep -q "$HOME/.local/bin" || { 
+		PATH="$HOME/.local/bin:$PATH" 
+	}
+
+	[[ ! -f ~/.bashrc ]] && touch ~/.bashrc
+
+	# Fazer um backup do arquivo ~/.bashrc se não existir.
+	[[ ! -f ~/".bashrc.pre-${__appname__}" ]] && {
+		printf "Fazendo backup do arquivo ~/.bashrc em ~/.bashrc.pre-${__appname__}\n"
+		cp ~/.bashrc ~/".bashrc.pre-${__appname__}"
+	}
+
+	# Se a linha de configuração já existir, encerrar a função aqui.
+	grep "$HOME/.local/bin" ~/.bashrc 1> /dev/null && return 0
+
+	# Continuar
+	echo "Configurando o arquivo ... ~/.bashrc"
+	sed -i "/^export.*PATH.*:/d" ~/.bashrc
+	echo "export PATH=$PATH" >> ~/.bashrc
+	printf "Execute o comando a seguir em seu terminal ${CYellow}source ~/.bashrc${CReset}\n"
+	return 0
+}
+
+
+configure_zshrc()
+{
+	[[ -z $HOME ]] && HOME=~/
+
+	# Inserir ~/.local/bin em PATH.
+	echo "$PATH" | grep -q "$HOME/.local/bin" || { 
+		PATH="$HOME/.local/bin:$PATH" 
+	}
+
+	[[ ! -f ~/.zshrc ]] && touch ~/.zshrc
+
+	# Fazer um backup do arquivo ~/.bashrc se não existir.
+	[[ ! -f ~/".zshrc.pre-${__appname__}" ]] && {
+		printf "Fazendo backup do arquivo ~/.zshrc em ~/.zshrc.pre-${__appname__}\n"
+		cp ~/.bashrc ~/".zshrc.pre-${__appname__}"
+	}
+
+	# Se a linha de configuração já existir, encerrar a função aqui.
+	grep "$HOME/.local/bin" ~/.zshrc 1> /dev/null && return 0
+
+	# Continuar
+	echo "Configurando o arquivo ... ~/.zshrc"
+	sed -i "/^export.*PATH.*:/d" ~/.zshrc
+	echo "export PATH=$PATH" >> ~/.zshrc
+	printf "Execute o comando a seguir em seu terminal ${CYellow}source ~/.zshrc${CReset}\n"
+	return 0
+}
+
 _set_tor_data()
 {
 	# url = domain/version/name
 	# /dist/torbrowser/9.0.9/tor-browser-linux64-9.0.9_en-US.tar.xz
+	_ping || return 1
 	printf "Obtendo informações online em ... https://www.torproject.org/download\n"
 	tor_page='https://www.torproject.org/download'
 	tor_domain='https://dist.torproject.org/torbrowser'
-	# tor_online_path=$(_get_html_page "$tor_page" --find 'torbrowser.*linux.*64.*tar' | sed 's/.*="//g;s/">.*//g') 
 	tor_online_path=$(_get_html_page "$tor_page" --find 'torbrowser.*linux.*en-US.*tar' | sed 's/.*="//g;s/">.*//g') 
 	tor_name_file=$(basename $tor_online_path)
 	tor_name_file_asc="${tor_name_file}.asc"
@@ -332,28 +434,35 @@ _set_tor_data()
 	url_download_torbrowser_asc="${url_download_torbrowser}.asc"
 }
 
+_remove_torbrowser()
+{
+	__rmdir__ "${TorDestinationFiles[@]}"
+}
+
 _install_torbrowser()
 {
 	# https://support.torproject.org/tbb/how-to-verify-signature/
 	# gpg --auto-key-locate nodefault,wkd --locate-keys torbrowser@torproject.org
 	# gpg --output ./tor.keyring --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290
 
+	_set_tor_data
 	local url_tor_gpgkey='https://openpgpkey.torproject.org/.well-known/openpgpkey/torproject.org/hu/kounek7zrdx745qydx6p59t9mqjpuhdf'
 	local path_tor_gpgkey="$TemporaryDir/tor.keyring"
 	local tor_path_file_asc="$DIR_DOWNLOAD/$tor_name_file_asc"
-	
+	local user_shell=$(grep ^$USER /etc/passwd | cut -d ':' -f 7)
+
 	__download__ "$url_download_torbrowser" "$DIR_DOWNLOAD/$tor_name_file" || return 1
 	__download__ "$url_download_torbrowser_asc" "$tor_path_file_asc" || return 1
 
 	# O usuario passou o parâmetro --downloadonly.
 	if [[ "$DownloadOnly" == 'True' ]]; then
-		printf "Feito somente download [--downloadonly]\n"
+		printf "%sFeito somente download pois a opção '--downloadonly' foi passada como argumento.\n"
 		return 0
 	fi
 
 	if is_executable 'torbrowser'; then
 		printf "Já instalado use ${CYellow}$__script__ --remove${CReset} para desinstalar o tor.\n"
-		#return 0
+		return 0
 	fi
 
 	print_line
@@ -371,22 +480,63 @@ _install_torbrowser()
 		printf "${CRed}Falha${CReset}\n"
 	fi
 
-	return
 	_unpack "$DIR_DOWNLOAD/$tor_name_file" || return 1
+	printf "Instalado tor em ${TorDestinationFiles[tor_destination]}\n"
+	cd $DIR_UNPACK # Não Remova.
+	mv tor-* "${TorDestinationFiles[tor_destination]}" || return 1
 
+	chmod -R u+x "${TorDestinationFiles[tor_destination]}"
+	cd "${TorDestinationFiles[tor_destination]}" 
+	./start-tor-browser.desktop --register-app # Gerar arquivo .desktop
+
+	# Gerar script para chamada via linha de comando.
+	printf "Criando script para execução via linha de comando.\n"
+	touch "${TorDestinationFiles[tor_executable]}"
+	echo "#!/bin/sh" > "${TorDestinationFiles[tor_executable]}"  # ~/.local/bin/torbrowser
+	echo -e "\ncd ${TorDestinationFiles[tor_destination]}\n"  >> "${TorDestinationFiles[tor_executable]}"
+	echo './start-tor-browser.desktop "$@"' >> "${TorDestinationFiles[tor_executable]}"
+	
+	# Gravar a versão atual no arquivo '.desktop'.
+	echo -e "Version=${tor_online_version}" >> "${TorDestinationFiles[tor_file_desktop]}"
+	chmod u+x "${TorDestinationFiles[tor_file_desktop]}"
+	chmod u+x "${TorDestinationFiles[tor_executable]}"
+	cp -u "${TorDestinationFiles[tor_file_desktop]}" ~/Desktop/ 2> /dev/null
+	cp -u "${TorDestinationFiles[tor_file_desktop]}" ~/'Área de trabalho'/ 2> /dev/null
+	cp -u "${TorDestinationFiles[tor_file_desktop]}" ~/'Área de Trabalho'/ 2> /dev/null
+	
+	configure_bashrc
+	configure_zshrc
+	
+	if is_executable 'torbrowser'; then
+		printf "TorBrowser instalado com sucesso\n"
+		#torbrowser # Abrir o navegador.
+	else
+		printf "${CRed}Falha ao tentar instalar TorBrowser${CReset}\n"
+		return 1
+	fi
+	return 0
 }
 
 main()
 {
-	_set_tor_data
-	_install_torbrowser
+	for ARG in "$@"; do
+		case "$ARG" in 
+			-d|--downloadonly) DownloadOnly='True';;
+			-h|--help) usage; return 0; break;;
+		esac
+	done
+
+	while [[ $1 ]]; do
+		case "$1" in
+			-i|--install) _install_torbrowser; return; break;;
+			-r|--remove) _remove_torbrowser; return; break;;
+		esac
+		shift
+	done
+	
 }
 
 main "$@"
+printf "${CYellow}Limpando cache e saindo.${CReset}\n"
+__rmdir__ $TemporaryDir $TemporaryFile 1> /dev/null 
 
-exit
-# url = domain/version/name
-# echo "${tor_server_dir:17:5}" -> Retornar 5 caracteres apartir da posição 17.
-# /dist/torbrowser/9.0.9/tor-browser-linux64-9.0.9_en-US.tar.xz
-
-tor_url_asc="${tor_url_dow}.asc"
