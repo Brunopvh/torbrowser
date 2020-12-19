@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-__version__='2020_12_12'
+__version__='2020_12_19'
 __appname__='torbrowser-installer'
 __script__=$(readlink -f "$0")
 
@@ -39,6 +39,7 @@ tor_name_file=''
 tor_name_file_asc=''
 url_download_torbrowser=''
 url_download_torbrowser_asc=''
+url_tor_gpgkey='https://openpgpkey.torproject.org/.well-known/openpgpkey/torproject.org/hu/kounek7zrdx745qydx6p59t9mqjpuhdf'
 
 print_line()
 {
@@ -54,11 +55,7 @@ _msg()
 
 is_executable()
 {
-	if [[ -x $(command -v $1) ]]; then
-		return 0
-	else
-		return 1
-	fi
+	command -v "$@" >/dev/null 2>&1
 }
 
 usage()
@@ -72,7 +69,6 @@ cat << EOF
        -v|--version            Mostra a versão deste programa.
        -d|--downloadonly       Apenas baixa o torbrowser.
        -u|--update             Baixar atualização do navegador Tor se houver atualização disponivel.
-       -U|--self-update        Atualiza este script, baixa a ultima versão do github.
 EOF
 exit 0
 }
@@ -87,12 +83,9 @@ ShowLogo()
 	print_line
 }
 
-ShowLogo
-
-
 __rmdir__()
 {
-	# Função para remover diretórios e arquivos, inclusive os arquivos é diretórios.
+	# Função para remover diretórios e arquivos.
 	
 	[[ -z $1 ]] && return 
 	while [[ $1 ]]; do		
@@ -173,9 +166,6 @@ _unpack()
 		printf "${CRed}(_unpack): Arquivo não suportado ... $path_file${CReset}\n"
 		return 1
 	fi
-
-	# Calcular o tamanho do arquivo
-	local len_file=$(du -hs $path_file | awk '{print $1}')
 	
 	# Descomprimir de acordo com cada extensão de arquivo.	
 	if [[ "$type_file" == 'TarGz' ]]; then
@@ -196,7 +186,7 @@ _unpack()
 	fi	
 
 	# echo -e "$(date +%H:%M:%S)"
-	_show_loop_procs "$!" "Descompactando ($len_file) ... $(basename $path_file)"
+	_show_loop_procs "$!" "Descompactando ... $(basename $path_file)"
 
 	# Verificar se a extração foi concluida com sucesso.
 	if [[ "$?" != '0' ]]; then
@@ -242,12 +232,12 @@ __download__()
 	printf "Salvando ... $path_file\n"
 	
 	while true; do
-		if is_executable aria2c; then
+		if is_executable wget; then
+			wget -c "$url" -O "$path_file" && break
+		elif is_executable aria2c; then
 			aria2c -c "$url" -d "$(dirname $path_file)" -o "$(basename $path_file)" && break
 		elif is_executable curl; then
 			curl -C - -S -L -o "$path_file" "$url" && break
-		elif is_executable wget; then
-			wget -c "$url" -O "$path_file" && break
 		else
 			return 1
 			break
@@ -276,6 +266,7 @@ __download__()
 
 gpg_verify()
 {
+	# Verificar integridade de um arquivo com gpg.
 	echo -ne "Verificando integridade do arquivo ... $(basename $2) "
 	gpg --verify "$1" "$2" 1> /dev/null 2>&1
 	if [[ $? == '0' ]]; then  
@@ -319,7 +310,7 @@ gpg_import()
 		
 		local TempFileAsc="$(mktemp)_gpg_import"
 		printf "Importando key apartir da url ... $1 "
-		__download__ "$1" "$TempFileAsc" 1> /dev/null || return 1
+		__download__ "$1" "$TempFileAsc" 1> /dev/null 2>&1 || return 1
 			
 		# Importar Key
 		if gpg --import "$TempFileAsc" 1> /dev/null 2>&1; then
@@ -336,8 +327,8 @@ gpg_import()
 
 _get_html_page()
 {
-	# $1 = url
-	# $2 = filtro a ser aplicado no contéudo html.
+	# $1 = url (OBRIGATÓRIO)
+	# $2 = filtro a ser aplicado no contéudo html (OPCIONAL).
 	# 
 	# EX: _get_html_page URL --find 'name-file.tar.gz'
 	#     _get_html_page URL
@@ -349,7 +340,7 @@ _get_html_page()
 	}
 
 	local temp_file_html="$(mktemp)-temp.html"
-	__download__ "$1" "$temp_file_html" 1> /dev/null || return 1
+	__download__ "$1" "$temp_file_html" 1> /dev/null 2>&1 || return 1
 
 	if [[ "$2" == '--find' ]]; then
 		shift 2
@@ -381,7 +372,6 @@ configure_bashrc()
 	# Se a linha de configuração já existir, encerrar a função aqui.
 	grep "$HOME/.local/bin" ~/.bashrc 1> /dev/null && return 0
 
-	# Continuar
 	echo "Configurando o arquivo ... ~/.bashrc"
 	sed -i "/^export.*PATH.*:/d" ~/.bashrc
 	echo "export PATH=$PATH" >> ~/.bashrc
@@ -420,6 +410,7 @@ configure_zshrc()
 
 _set_tor_data()
 {
+	# Obter informações sobre o Tor na página de download.
 	# url = domain/version/name
 	# /dist/torbrowser/9.0.9/tor-browser-linux64-9.0.9_en-US.tar.xz
 	_ping || return 1
@@ -434,6 +425,28 @@ _set_tor_data()
 	url_download_torbrowser_asc="${url_download_torbrowser}.asc"
 }
 
+download_tor_update()
+{
+	if [[ ! -f "${TorDestinationFiles[tor_file_desktop]}" ]]; then
+		printf "Instale o navegador tor para prosseguir.\n"
+		return
+	fi
+
+	set_tor_local_version=$(grep ^Version= "${TorDestinationFiles[tor_file_desktop]}" | sed 's/.*=//g')
+	echo "Versão local => $set_tor_local_version"
+	echo -ne "Versão online => \r"
+	_set_tor_data 1> /dev/null 2>&1 # Obter informações online. 
+	echo -e "Versão online => $tor_online_version"
+
+	if [[ "$set_tor_local_version" == "$tor_online_version" ]]; then
+		printf "Você já tem a ultima versão do torbrowser instalada.\n"
+		return
+	fi
+
+	__download__ "$url_download_torbrowser" "$DIR_DOWNLOAD/$tor_name_file" || return 1
+	__download__ "$url_download_torbrowser_asc" "$DIR_DOWNLOAD/$tor_name_file_asc" || return 1
+}
+
 _remove_torbrowser()
 {
 	__rmdir__ "${TorDestinationFiles[@]}"
@@ -445,8 +458,8 @@ _install_torbrowser()
 	# gpg --auto-key-locate nodefault,wkd --locate-keys torbrowser@torproject.org
 	# gpg --output ./tor.keyring --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290
 
-	_set_tor_data
-	local url_tor_gpgkey='https://openpgpkey.torproject.org/.well-known/openpgpkey/torproject.org/hu/kounek7zrdx745qydx6p59t9mqjpuhdf'
+	_set_tor_data 1> /dev/null
+
 	local path_tor_gpgkey="$TemporaryDir/tor.keyring"
 	local tor_path_file_asc="$DIR_DOWNLOAD/$tor_name_file_asc"
 	local user_shell=$(grep ^$USER /etc/passwd | cut -d ':' -f 7)
@@ -509,7 +522,7 @@ _install_torbrowser()
 	
 	if is_executable 'torbrowser'; then
 		printf "TorBrowser instalado com sucesso\n"
-		#torbrowser # Abrir o navegador.
+		torbrowser # Abrir o navegador.
 	else
 		printf "${CRed}Falha ao tentar instalar TorBrowser${CReset}\n"
 		return 1
@@ -523,13 +536,16 @@ main()
 		case "$ARG" in 
 			-d|--downloadonly) DownloadOnly='True';;
 			-h|--help) usage; return 0; break;;
+			-v|--version) echo -e "$__appname__ V$__version__"; return 0; break;;
 		esac
 	done
 
+	ShowLogo
 	while [[ $1 ]]; do
 		case "$1" in
 			-i|--install) _install_torbrowser; return; break;;
 			-r|--remove) _remove_torbrowser; return; break;;
+			-u|--update) download_tor_update; return; break;;
 		esac
 		shift
 	done
@@ -537,6 +553,5 @@ main()
 }
 
 main "$@"
-printf "${CYellow}Limpando cache e saindo.${CReset}\n"
 __rmdir__ $TemporaryDir $TemporaryFile 1> /dev/null 
 
