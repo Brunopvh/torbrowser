@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-__version__='2021_01_22'
+__version__='2021_01_23'
 __appname__='torbrowser-installer'
 __script__=$(readlink -f "$0")
 
@@ -42,7 +42,7 @@ tor_online_file_asc=''
 url_download_torbrowser=''
 url_download_torbrowser_asc=''
 url_tor_gpgkey='https://openpgpkey.torproject.org/.well-known/openpgpkey/torproject.org/hu/kounek7zrdx745qydx6p59t9mqjpuhdf'
-
+path_tor_gpgkey="$TemporaryDir/tor.keyring"
 TORBROWSER_INSTALLER_ONLINE_SCRIPT='https://raw.github.com/Brunopvh/torbrowser/master/tor.sh'
 TORBROWSER_LOCAL_SCRIPT=~/.local/bin/tor-installer
 
@@ -73,7 +73,7 @@ cat << EOF
      -i|--install            Instala a ultima versão do torbrowser.
      -r|--remove             Desistala o torbrowser.
      -f|--file <path file>   Instala o tor apartir de um arquivo .tar passado como argumento.
-     -s|--save <output dir>  Baixa o tor no diretório especificado como o nome de arquivo do servidor.
+     -s|--save-dir <output dir>  Baixa o tor no diretório especificado como o nome de arquivo do servidor.
      -S|--save-file <output file> Baixa o tor e salva no arquivo de destino especificado.
      -v|--version            Mostra a versão deste programa.
      -d|--downloadonly       Apenas baixa o torbrowser.
@@ -91,6 +91,18 @@ ShowLogo()
 	echo -e "${CYellow}A${CReset}utor: Bruno Chaves"
 	echo -e "${CYellow}G${CReset}ithub: $RepoTorbrowserInstaller"
 	print_line
+}
+
+
+get_extension_file()
+{
+	[[ -z $1 ]] && return 1
+	is_executable file || {
+		echo 'None'
+		return 1
+	}
+
+	file "$1" | cut -d ' ' -f 2
 }
 
 __rmdir__()
@@ -164,30 +176,30 @@ _unpack()
 
 	# Detectar a extensão do arquivo.
 	if [[ "${path_file: -6}" == 'tar.gz' ]]; then    # tar.gz - 6 ultimos caracteres.
-		type_file='TarGz'
+		extension_file='TarGz'
 	elif [[ "${path_file: -7}" == 'tar.bz2' ]]; then # tar.bz2 - 7 ultimos carcteres.
-		type_file='TarBz2'
+		extension_file='TarBz2'
 	elif [[ "${path_file: -6}" == 'tar.xz' ]]; then  # tar.xz
-		type_file='TarXz'
+		extension_file='TarXz'
 	elif [[ "${path_file: -4}" == '.zip' ]]; then    # .zip
-		type_file='Zip'
+		extension_file='Zip'
 	elif [[ "${path_file: -4}" == '.deb' ]]; then    # .deb
-		type_file='DebPkg'
+		extension_file='DebPkg'
 	else
 		printf "${CRed}(_unpack): Arquivo não suportado ... $path_file${CReset}\n"
 		return 1
 	fi
 	
 	# Descomprimir de acordo com cada extensão de arquivo.	
-	if [[ "$type_file" == 'TarGz' ]]; then
+	if [[ "$extension_file" == 'TarGz' ]]; then
 		tar -zxvf "$path_file" -C "$DIR_UNPACK" 1> /dev/null 2>&1 &
-	elif [[ "$type_file" == 'TarBz2' ]]; then
+	elif [[ "$extension_file" == 'TarBz2' ]]; then
 		tar -jxvf "$path_file" -C "$DIR_UNPACK" 1> /dev/null 2>&1 &
-	elif [[ "$type_file" == 'TarXz' ]]; then
+	elif [[ "$extension_file" == 'TarXz' ]]; then
 		tar -Jxf "$path_file" -C "$DIR_UNPACK" 1> /dev/null 2>&1 &
-	elif [[ "$type_file" == 'Zip' ]]; then
+	elif [[ "$extension_file" == 'Zip' ]]; then
 		unzip "$path_file" -d "$DIR_UNPACK" 1> /dev/null 2>&1 &
-	elif [[ "$type_file" == 'DebPkg' ]]; then
+	elif [[ "$extension_file" == 'DebPkg' ]]; then
 		
 		if [[ -f /etc/debian_version ]]; then    # Descompressão em sistemas DEBIAN
 			ar -x "$path_file" 1> /dev/null 2>&1  &
@@ -224,45 +236,54 @@ _ping()
 
 __download__()
 {
+	# $1 = URL
+	# $2 = OutputFile
 	[[ -z $2 ]] && {
 		printf "${CRed}Necessário informar um arquivo de destino.${CReset}\n"
 		return 1
 	}
 
 	[[ -f "$2" ]] && {
-		printf "${CGreen}Arquivo encontrado ... $2${CReset}\n"
+		TypeFile=$(get_extension_file "$2")
+		if [[ "$TypeFile" == 'PGP' ]]; then
+			printf "${CGreen}A${CReset}rquivo PGP encontrado em ... $2\n"
+		elif [[ "$TypeFile" == 'XZ' ]]; then
+			printf "${CGreen}A${CReset}rquivo XZ encontrado em ... $2\n"
+		else
+			printf "${CRed}Arquivo inválido encontrado em ... $2${CReset}\n"
+			return 1
+		fi
 		return 0
 	}
 
-	local url="$1"
-	local path_file="$2"
 	local count=3
 	
 	cd "$DIR_DOWNLOAD"
-	printf "Salvando ... $path_file\n"
+	print_line
+	printf "Salvando ... $2\n"
 	printf "Conectando ... $1\n"
 	
 	while true; do
-		if is_executable aria2c; then
-			aria2c -c "$url" -d "$(dirname $path_file)" -o "$(basename $path_file)" && break
+		if is_executable curl; then
+			curl -C - -S -L -o "$2" "$1" && break
+		elif is_executable aria2c; then
+			aria2c -c "$1" -d "$(dirname $2)" -o "$(basename $2)" && break
 		elif is_executable wget; then
-			wget -c "$url" -O "$path_file" && break
-		elif is_executable curl; then
-			curl -C - -S -L -o "$path_file" "$url" && break
+			wget -c "$1" -O "$2" && break
 		else
 			return 1
 			break
 		fi
 		
 		printf "${CRed}Falha no download${CReset}\n"
-		sleep 0.1
+		sleep 0.4
 		local count="$(($count-1))"
 		if [[ $count > 0 ]]; then
 			printf "${CYellow}Tentando novamente. Restando [$count] tentativa(s) restante(s).${CReset}\n"
 			sleep 0.5
 			continue
 		else
-			[[ -f "$path_file" ]] && __rmdir__ "$path_file"
+			[[ -f "$2" ]] && __rmdir__ "$2"
 			print_line
 			return 1
 			break
@@ -320,7 +341,7 @@ gpg_import()
 		fi
 		
 		local TempFileAsc="$(mktemp)_gpg_import"
-		printf "Importando key apartir da url ... $1 "
+		printf "Importando key apartir de url ... "
 		__download__ "$1" "$TempFileAsc" 1> /dev/null 2>&1 || return 1
 			
 		# Importar Key
@@ -439,7 +460,8 @@ update_script_torbrowser()
 	# Obter o script online no github.
 	ShowLogo
 	_ping || return 1
-	local temp_file_update="$(mktemp)-tor-update.sh"
+	local temp_file_update="$TemporaryDir/torbrowser_script_update.sh"
+	
 	printf "Obtendo o arquivo de atualização no github "
 	if is_executable aria2c; then
 		aria2c -c "$TORBROWSER_INSTALLER_ONLINE_SCRIPT" -d "$TemporaryDir" -o "torbrowser_script_update.sh" 1> /dev/null
@@ -447,26 +469,53 @@ update_script_torbrowser()
 		curl -fsSL -o "$TemporaryDir/torbrowser_script_update.sh" "$TORBROWSER_INSTALLER_ONLINE_SCRIPT"
 	elif is_executable wget; then
 		wget "$TORBROWSER_INSTALLER_ONLINE_SCRIPT" -O "$TemporaryDir/torbrowser_script_update.sh"
+	else
+		printf "${CRed}Falha${CReset}\n"
+		printf "Instale a ferramenta curl ou wget\n"
+		return 1
 	fi 
 
 	[[ $? != 0 ]] && {
 		printf "${CRed}Falha${CReset}\n"
-		__rmdir__ "$TemporaryDir/torbrowser_script_update.sh"
+		__rmdir__ "$temp_file_update"
 		return 1
 	}
 	
 	printf "OK\n"
 	printf "Instalando a versão "
-	grep -m 1 '^__version__' "$TemporaryDir/torbrowser_script_update.sh" | cut -d '=' -f 2
-	cp -v "$TemporaryDir/torbrowser_script_update.sh" "$TORBROWSER_LOCAL_SCRIPT"
+	grep -m 1 '^__version__' "$temp_file_update" | cut -d '=' -f 2
+	cp -v "$temp_file_update" "$TORBROWSER_LOCAL_SCRIPT"
 	chmod +x "$TORBROWSER_LOCAL_SCRIPT"
 	configure_bashrc
 	configure_zshrc
 	return 0
 }
 
+_savefile_torbrowser_package()
+{
+	# Salva o tor com o nome/path especificado na linha de comando como argumento da opção -S|--save-file
+	[[ -z $1 ]] && return 1
+
+	[[ ! -d $(dirname $1) ]] && {
+		printf "${CRed}Diretório não existe ... $(dirname $1)${CReset}\n"
+		return 1
+	}
+
+	[[ ! -w $(dirname $1) ]] && {
+		printf "${CRed}Você não tem permissão de escrita em ... $(dirname $1)${CReset}\n"
+		return 1
+	}
+
+	_set_tor_data 
+	__download__ "$url_download_torbrowser" "$1" || return 1
+	__download__ "$url_download_torbrowser_asc" "${1}.asc" || return 1
+	gpg_import "$url_tor_gpgkey" || return 1
+	return 0
+}
+
 _save_torbrowser_package()
 {
+	# Salva o tor com o nome de servidor no diretório especificado no argumento da opção -s|--save-dir
 	[[ -z $1 ]] && return 1
 
 	[[ ! -d $1 ]] && {
@@ -482,12 +531,83 @@ _save_torbrowser_package()
 	_set_tor_data 
 	__download__ "$url_download_torbrowser" "$1/$tor_online_package" || return 1
 	__download__ "$url_download_torbrowser_asc" "$1/${tor_online_package}.asc" || return 1
-
+	gpg_import "$url_tor_gpgkey" || return 1
+	return 0
 }
 
 _remove_torbrowser()
 {
 	__rmdir__ "${TorDestinationFiles[@]}"
+}
+
+_add_script_tor_cli()
+{
+	chmod -R u+x "${TorDestinationFiles[tor_destination]}"
+	cd "${TorDestinationFiles[tor_destination]}" 
+	./start-tor-browser.desktop --register-app # Gerar arquivo .desktop
+
+	# Gerar script para chamada via linha de comando.
+	printf "Criando script para execução via linha de comando.\n"
+	echo -ne "#!/bin/sh" > "${TorDestinationFiles[tor_executable]}"
+	echo -e "\ncd ${TorDestinationFiles[tor_destination]} && ./start-tor-browser.desktop $@" >> "${TorDestinationFiles[tor_executable]}"
+}
+
+_add_desktop_file(){
+
+	# Gravar a versão atual no arquivo '.desktop'.
+	echo -e "Version=${tor_online_version}" >> "${TorDestinationFiles[tor_file_desktop]}"
+	chmod u+x "${TorDestinationFiles[tor_file_desktop]}"
+	chmod u+x "${TorDestinationFiles[tor_executable]}"
+	cp -u "${TorDestinationFiles[tor_file_desktop]}" ~/Desktop/ 2> /dev/null
+	cp -u "${TorDestinationFiles[tor_file_desktop]}" ~/'Área de trabalho'/ 2> /dev/null
+	cp -u "${TorDestinationFiles[tor_file_desktop]}" ~/'Área de Trabalho'/ 2> /dev/null
+}
+
+_install_local_file()
+{
+	# Instalar o tor apartir de um arquivo no disco rigido local informado pelo usuário.
+	# 
+
+	[[ -z $1 ]] && return 1
+
+	[[ ! -f $1 ]] && {
+		printf "${CRed}Arquivo não existe ... $1${CReset}\n"
+		return 1
+	}
+
+	local tor_online_version='1.0'
+	local tor_path_file_asc="${1}.asc"
+
+	printf "${CGreen}G${CReset}erando arquivo de verificação "
+	gpg --output "$path_tor_gpgkey" --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290 || {
+		printf "${CRed}Falha${CReset}\n"
+		return 1
+	}
+	printf "OK\n"
+	printf "Executando ... gpgv --keyring "
+	gpgv --keyring $path_tor_gpgkey $tor_path_file_asc $1 1> /dev/null 2>&1 || {
+		printf "${CRed}Falha${CReset}\n"
+		return 1	
+	}
+	printf "OK\n"
+	_unpack "$1" || return 1
+	printf "${CGreen}I${CReset}nstalado tor em ... ${TorDestinationFiles[tor_destination]}\n"
+	cd $DIR_UNPACK # Não Remova.
+	mv tor-* "${TorDestinationFiles[tor_destination]}" || return 1
+
+	_add_script_tor_cli
+	_add_desktop_file
+	configure_bashrc
+	configure_zshrc
+	
+	if is_executable 'torbrowser'; then
+		printf "TorBrowser instalado com sucesso\n"
+		torbrowser # Abrir o navegador.
+	else
+		printf "${CRed}Falha ao tentar instalar TorBrowser${CReset}\n"
+		return 1
+	fi
+	return 0
 }
 
 _install_torbrowser()
@@ -496,9 +616,7 @@ _install_torbrowser()
 	# gpg --auto-key-locate nodefault,wkd --locate-keys torbrowser@torproject.org
 	# gpg --output ./tor.keyring --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290
 
-	_set_tor_data 1> /dev/null
-
-	local path_tor_gpgkey="$TemporaryDir/tor.keyring"
+	_set_tor_data || return 1
 	local tor_path_file_asc="$DIR_DOWNLOAD/$tor_online_file_asc"
 	local user_shell=$(grep ^$USER /etc/passwd | cut -d ':' -f 7)
 
@@ -529,32 +647,16 @@ _install_torbrowser()
 		printf "OK\n"
 	else
 		printf "${CRed}Falha${CReset}\n"
+		return 1
 	fi
 
 	_unpack "$DIR_DOWNLOAD/$tor_online_package" || return 1
-	printf "Instalado tor em ${TorDestinationFiles[tor_destination]}\n"
+	printf "${CGreen}I${CReset}nstalado tor em ... ${TorDestinationFiles[tor_destination]}\n"
 	cd $DIR_UNPACK # Não Remova.
 	mv tor-* "${TorDestinationFiles[tor_destination]}" || return 1
 
-	chmod -R u+x "${TorDestinationFiles[tor_destination]}"
-	cd "${TorDestinationFiles[tor_destination]}" 
-	./start-tor-browser.desktop --register-app # Gerar arquivo .desktop
-
-	# Gerar script para chamada via linha de comando.
-	printf "Criando script para execução via linha de comando.\n"
-	touch "${TorDestinationFiles[tor_executable]}"
-	echo "#!/bin/sh" > "${TorDestinationFiles[tor_executable]}"  # ~/.local/bin/torbrowser
-	echo -e "\ncd ${TorDestinationFiles[tor_destination]}\n"  >> "${TorDestinationFiles[tor_executable]}"
-	echo './start-tor-browser.desktop "$@"' >> "${TorDestinationFiles[tor_executable]}"
-	
-	# Gravar a versão atual no arquivo '.desktop'.
-	echo -e "Version=${tor_online_version}" >> "${TorDestinationFiles[tor_file_desktop]}"
-	chmod u+x "${TorDestinationFiles[tor_file_desktop]}"
-	chmod u+x "${TorDestinationFiles[tor_executable]}"
-	cp -u "${TorDestinationFiles[tor_file_desktop]}" ~/Desktop/ 2> /dev/null
-	cp -u "${TorDestinationFiles[tor_file_desktop]}" ~/'Área de trabalho'/ 2> /dev/null
-	cp -u "${TorDestinationFiles[tor_file_desktop]}" ~/'Área de Trabalho'/ 2> /dev/null
-	
+	_add_script_tor_cli
+	_add_desktop_file
 	configure_bashrc
 	configure_zshrc
 	
@@ -567,6 +669,7 @@ _install_torbrowser()
 	fi
 	return 0
 }
+
 
 main()
 {
@@ -582,7 +685,9 @@ main()
 		case "$1" in
 			-i|--install) _install_torbrowser; return; break;;
 			-r|--remove) _remove_torbrowser; return; break;;
-			-s|--save) shift; _save_torbrowser_package "$@"; return; break;;
+			-s|--save-dir) shift; _save_torbrowser_package "$@"; return; break;;
+			-S|--save-file) shift; _savefile_torbrowser_package "$@"; return; break;;
+			-f|--file) shift; _install_local_file "$@"; return; break;;
 			-u|--self-update) update_script_torbrowser; return; break;;
 		esac
 		shift
