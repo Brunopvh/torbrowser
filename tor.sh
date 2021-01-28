@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-__version__='2021_01_23'
+__version__='2021_01_27'
 __appname__='torbrowser-installer'
 __script__=$(readlink -f "$0")
 
@@ -694,6 +694,11 @@ main()
 	done
 }
 
-main "$@"
+if [[ $1 ]]; then
+	main "$@"
+else
+	ShowLogo
+fi
+
 __rmdir__ $TemporaryDir $TemporaryFile 1> /dev/null 
 
