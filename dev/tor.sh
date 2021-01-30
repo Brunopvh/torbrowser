@@ -17,7 +17,7 @@
 #
 #
 
-__version__='2021_01_29'
+__version__='2021_01_30'
 __appname__='torbrowser-installer'
 __script__=$(readlink -f "$0")
 
@@ -32,10 +32,10 @@ DELAY='0.05'
 StatusOutput='0'
 
 # Usuário não pode ser o root.
-if [[ $(id -u) == '0' ]]; then
+[[ $(id -u) == '0' ]] && {
 	printf "${CRed}Usuário não pode ser o 'root' saindo...${CRese}\n"
 	exit 1
-fi
+}
 
 TemporaryDir="$(mktemp --directory)-torbrowser-installer"
 TemporaryFile=$(mktemp)
@@ -48,8 +48,8 @@ mkdir -p ~/.local/bin
 
 declare -A TorDestinationFiles
 TorDestinationFiles=(
-	[tor_destination]=~/".local/bin/torbrowser-amd64"
-	[tor_executable]=~/".local/bin/torbrowser"
+	[tor_destination_dir]=~/".local/bin/torbrowser-amd64"
+	[tor_executable_script]=~/".local/bin/torbrowser"
 	[tor_file_desktop]=~/".local/share/applications/start-tor-browser.desktop"
 )
 
@@ -66,9 +66,12 @@ url_download_torbrowser_asc=''
 url_tor_gpgkey='https://openpgpkey.torproject.org/.well-known/openpgpkey/torproject.org/hu/kounek7zrdx745qydx6p59t9mqjpuhdf'
 
 # Informações locais.
-TORBROWSER_LOCAL_SCRIPT=~/.local/bin/tor-installer # Script para chamada via linha de comando.
+TORBROWSER_LOCAL_SCRIPT=~/.local/bin/tor-installer # local de instalação deste script.
 tor_path_keyring_file="$TemporaryDir/tor.keyring"
 tor_path_file_asc=''
+
+[[ -f ~/.bashrc ]] && source ~/.bashrc
+[[ -z $HOME ]] && HOME=~/
 
 print_line()
 {
@@ -117,7 +120,6 @@ ShowLogo()
 	print_line
 }
 
-
 get_extension_file()
 {
 	# Usar o comando "file" para saber qual o cabeçalho de um arquivo qualquer.
@@ -151,6 +153,58 @@ __rmdir__()
 		shift
 		sleep "$DELAY"
 	done
+}
+
+configure_bashrc()
+{
+	# Inserir ~/.local/bin em PATH.
+	echo "$PATH" | grep -q "$HOME/.local/bin" || { 
+		PATH="$HOME/.local/bin:$PATH" 
+	}
+
+	[[ ! -f ~/.bashrc ]] && touch ~/.bashrc
+
+	# Fazer um backup do arquivo ~/.bashrc se não existir.
+	[[ ! -f ~/".bashrc.pre-${__appname__}" ]] && {
+		printf "Fazendo backup do arquivo ~/.bashrc em ~/.bashrc.pre-${__appname__}\n"
+		cp ~/.bashrc ~/".bashrc.pre-${__appname__}"
+	}
+
+	# Se a linha de configuração já existir, encerrar a função aqui.
+	grep "$HOME/.local/bin" ~/.bashrc 1> /dev/null && return 0
+
+	echo "Configurando o arquivo ... ~/.bashrc"
+	sed -i "/^export.*PATH.*:/d" ~/.bashrc
+	echo "export PATH=$PATH" >> ~/.bashrc
+	printf "Execute o comando a seguir em seu terminal ${CYellow}source ~/.bashrc${CReset}\n"
+	return 0
+}
+
+configure_zshrc()
+{
+	# Inserir ~/.local/bin em PATH.
+	echo "$PATH" | grep -q "$HOME/.local/bin" || { 
+		PATH="$HOME/.local/bin:$PATH" 
+	}
+
+	[[ -f ~/.zshrc ]] && source ~/.zshrc
+	[[ ! -f ~/.zshrc ]] && touch ~/.zshrc
+
+	# Fazer um backup do arquivo ~/.bashrc se não existir.
+	[[ ! -f ~/".zshrc.pre-${__appname__}" ]] && {
+		printf "Fazendo backup do arquivo ~/.zshrc em ~/.zshrc.pre-${__appname__}\n"
+		cp ~/.bashrc ~/".zshrc.pre-${__appname__}"
+	}
+
+	# Se a linha de configuração já existir, encerrar a função aqui.
+	grep "$HOME/.local/bin" ~/.zshrc 1> /dev/null && return 0
+
+	# Continuar
+	echo "Configurando o arquivo ... ~/.zshrc"
+	sed -i "/^export.*PATH.*:/d" ~/.zshrc
+	echo "export PATH=$PATH" >> ~/.zshrc
+	printf "Execute o comando a seguir em seu terminal ${CYellow}source ~/.zshrc${CReset}\n"
+	return 0
 }
 
 _show_loop_procs()
@@ -200,32 +254,36 @@ _unpack()
 	__rmdir__ $(ls) # Limpar o diretório temporário.
 	path_file="$1"
 
-	# Detectar a extensão do arquivo.
-	if [[ "${path_file: -6}" == 'tar.gz' ]]; then    # tar.gz - 6 ultimos caracteres.
-		extension_file='TarGz'
-	elif [[ "${path_file: -7}" == 'tar.bz2' ]]; then # tar.bz2 - 7 ultimos carcteres.
-		extension_file='TarBz2'
-	elif [[ "${path_file: -6}" == 'tar.xz' ]]; then  # tar.xz
-		extension_file='TarXz'
-	elif [[ "${path_file: -4}" == '.zip' ]]; then    # .zip
-		extension_file='Zip'
-	elif [[ "${path_file: -4}" == '.deb' ]]; then    # .deb
-		extension_file='DebPkg'
+	if [[ -x $(command -v file) ]]; then
+		extension_file=$(get_extension_file "$path_file")
 	else
-		printf "${CRed}(_unpack): Arquivo não suportado ... $path_file${CReset}\n"
-		return 1
+		# Detectar o tipo de arquivo apartir da extensão.
+		if [[ "${path_file: -6}" == 'tar.gz' ]]; then    # tar.gz - 6 ultimos caracteres.
+			extension_file='gzip'
+		elif [[ "${path_file: -7}" == 'tar.bz2' ]]; then # tar.bz2 - 7 ultimos carcteres.
+			extension_file='bzip2'
+		elif [[ "${path_file: -6}" == 'tar.xz' ]]; then  # tar.xz
+			extension_file='XZ'
+		elif [[ "${path_file: -4}" == '.zip' ]]; then    # .zip
+			extension_file='Zip'
+		elif [[ "${path_file: -4}" == '.deb' ]]; then    # .deb
+			extension_file='Debian'
+		else
+			printf "${CRed}(_unpack): Arquivo não suportado ... $path_file${CReset}\n"
+			return 1
+		fi
 	fi
 	
 	# Descomprimir de acordo com cada extensão de arquivo.	
-	if [[ "$extension_file" == 'TarGz' ]]; then
+	if [[ "$extension_file" == 'gzip' ]]; then
 		tar -zxvf "$path_file" -C "$DIR_UNPACK" 1> /dev/null 2>&1 &
-	elif [[ "$extension_file" == 'TarBz2' ]]; then
+	elif [[ "$extension_file" == 'bzip2' ]]; then
 		tar -jxvf "$path_file" -C "$DIR_UNPACK" 1> /dev/null 2>&1 &
-	elif [[ "$extension_file" == 'TarXz' ]]; then
+	elif [[ "$extension_file" == 'XZ' ]]; then
 		tar -Jxf "$path_file" -C "$DIR_UNPACK" 1> /dev/null 2>&1 &
 	elif [[ "$extension_file" == 'Zip' ]]; then
 		unzip "$path_file" -d "$DIR_UNPACK" 1> /dev/null 2>&1 &
-	elif [[ "$extension_file" == 'DebPkg' ]]; then
+	elif [[ "$extension_file" == 'Debian' ]]; then
 		
 		if [[ -f /etc/debian_version ]]; then    # Descompressão em sistemas DEBIAN
 			ar -x "$path_file" 1> /dev/null 2>&1  &
@@ -235,21 +293,20 @@ _unpack()
 	fi	
 
 	# echo -e "$(date +%H:%M:%S)"
-	_show_loop_procs "$!" "Descompactando ... $(basename $path_file)"
+	_show_loop_procs "$!" "Descompactando ... [$extension_file] ... $(basename $path_file)"
 	return 0
 }
 
 _ping()
 {
 	printf "Aguardando conexão ... "
-
 	if ping -c 1 8.8.8.8 1> /dev/null 2>&1; then
 		printf "Conectado\n"
 		return 0
 	else
-		printf "\033[0;31mFALHA\033[m\n"
-		printf "\033[0;31mAVISO: você está OFF-LINE\033[m\n"
-		sleep 1
+		printf "\033[0;31mFalha\033[m "
+		printf "AVISO: você está OFF-LINE\n"
+		sleep $DELAY
 		return 1
 	fi
 }
@@ -404,61 +461,6 @@ _get_html_page()
 	rm -rf "$temp_file_html" 2> /dev/null
 }
 
-configure_bashrc()
-{
-	[[ -z $HOME ]] && HOME=~/
-
-	# Inserir ~/.local/bin em PATH.
-	echo "$PATH" | grep -q "$HOME/.local/bin" || { 
-		PATH="$HOME/.local/bin:$PATH" 
-	}
-
-	[[ ! -f ~/.bashrc ]] && touch ~/.bashrc
-
-	# Fazer um backup do arquivo ~/.bashrc se não existir.
-	[[ ! -f ~/".bashrc.pre-${__appname__}" ]] && {
-		printf "Fazendo backup do arquivo ~/.bashrc em ~/.bashrc.pre-${__appname__}\n"
-		cp ~/.bashrc ~/".bashrc.pre-${__appname__}"
-	}
-
-	# Se a linha de configuração já existir, encerrar a função aqui.
-	grep "$HOME/.local/bin" ~/.bashrc 1> /dev/null && return 0
-
-	echo "Configurando o arquivo ... ~/.bashrc"
-	sed -i "/^export.*PATH.*:/d" ~/.bashrc
-	echo "export PATH=$PATH" >> ~/.bashrc
-	printf "Execute o comando a seguir em seu terminal ${CYellow}source ~/.bashrc${CReset}\n"
-	return 0
-}
-
-configure_zshrc()
-{
-	[[ -z $HOME ]] && HOME=~/
-
-	# Inserir ~/.local/bin em PATH.
-	echo "$PATH" | grep -q "$HOME/.local/bin" || { 
-		PATH="$HOME/.local/bin:$PATH" 
-	}
-
-	[[ ! -f ~/.zshrc ]] && touch ~/.zshrc
-
-	# Fazer um backup do arquivo ~/.bashrc se não existir.
-	[[ ! -f ~/".zshrc.pre-${__appname__}" ]] && {
-		printf "Fazendo backup do arquivo ~/.zshrc em ~/.zshrc.pre-${__appname__}\n"
-		cp ~/.bashrc ~/".zshrc.pre-${__appname__}"
-	}
-
-	# Se a linha de configuração já existir, encerrar a função aqui.
-	grep "$HOME/.local/bin" ~/.zshrc 1> /dev/null && return 0
-
-	# Continuar
-	echo "Configurando o arquivo ... ~/.zshrc"
-	sed -i "/^export.*PATH.*:/d" ~/.zshrc
-	echo "export PATH=$PATH" >> ~/.zshrc
-	printf "Execute o comando a seguir em seu terminal ${CYellow}source ~/.zshrc${CReset}\n"
-	return 0
-}
-
 _set_tor_data()
 {
 	# Obter informações sobre o Tor na página de download.
@@ -548,17 +550,18 @@ _save_torbrowser_in_dir()
 		return 1
 	}
 
+	SAVE_DIR="${1%%/}"
 	_set_tor_data 
-	__download__ "$url_download_torbrowser" "$1/$tor_online_package" || return 1
-	__download__ "$url_download_torbrowser_asc" "$1/${tor_online_package}.asc" || return 1
+	__download__ "$url_download_torbrowser" "$SAVE_DIR/$tor_online_package" || return 1
+	__download__ "$url_download_torbrowser_asc" "$SAVE_DIR/${tor_online_package}.asc" || return 1
 	gpg_import "$url_tor_gpgkey" || return 1
 	return 0
 }
 
-_verify_keyring(){
+_verify_keyring_tor(){
 	# $1 = Pacote tar.xz a ser usado na instalação.
 	[[ ! -f $1 ]] && {
-		printf "${CRed}(_verify_keyring): parâmetro incorreto detectado.${CReset}\n"
+		printf "${CRed}(_verify_keyring_tor): parâmetro incorreto detectado.${CReset}\n"
 		return 1
 	}
 
@@ -581,14 +584,14 @@ _verify_keyring(){
 
 _add_script_tor_cli()
 {
-	chmod -R u+x "${TorDestinationFiles[tor_destination]}"
-	cd "${TorDestinationFiles[tor_destination]}" 
+	chmod -R u+x "${TorDestinationFiles[tor_destination_dir]}"
+	cd "${TorDestinationFiles[tor_destination_dir]}" 
 	./start-tor-browser.desktop --register-app # Gerar arquivo .desktop
 
 	# Gerar script para chamada via linha de comando.
 	printf "Criando script para execução via linha de comando.\n"
-	echo -ne "#!/bin/sh" > "${TorDestinationFiles[tor_executable]}"
-	echo -e "\ncd ${TorDestinationFiles[tor_destination]} && ./start-tor-browser.desktop $@" >> "${TorDestinationFiles[tor_executable]}"
+	echo -ne "#!/bin/sh" > "${TorDestinationFiles[tor_executable_script]}"
+	echo -e "\ncd ${TorDestinationFiles[tor_destination_dir]} && ./start-tor-browser.desktop $@" >> "${TorDestinationFiles[tor_executable_script]}"
 }
 
 _add_desktop_file(){
@@ -596,7 +599,7 @@ _add_desktop_file(){
 	# Gravar a versão atual no arquivo '.desktop'.
 	echo -e "Version=${tor_online_version}" >> "${TorDestinationFiles[tor_file_desktop]}"
 	chmod u+x "${TorDestinationFiles[tor_file_desktop]}"
-	chmod u+x "${TorDestinationFiles[tor_executable]}"
+	chmod u+x "${TorDestinationFiles[tor_executable_script]}"
 	cp -u "${TorDestinationFiles[tor_file_desktop]}" ~/Desktop/ 2> /dev/null
 	cp -u "${TorDestinationFiles[tor_file_desktop]}" ~/'Área de trabalho'/ 2> /dev/null
 	cp -u "${TorDestinationFiles[tor_file_desktop]}" ~/'Área de Trabalho'/ 2> /dev/null
@@ -624,11 +627,11 @@ _install_local_file()
 	tor_online_version='1.0'
 	tor_path_file_asc="${1}.asc"
 
-	_verify_keyring "$1" || return 1
+	_verify_keyring_tor "$1" || return 1
 	_unpack "$1" || return 1
-	printf "${CGreen}I${CReset}nstalado tor em ... ${TorDestinationFiles[tor_destination]}\n"
+	printf "${CGreen}I${CReset}nstalado tor em ... ${TorDestinationFiles[tor_destination_dir]}\n"
 	cd $DIR_UNPACK # Não Remova.
-	mv tor-* "${TorDestinationFiles[tor_destination]}" || return 1
+	mv tor-* "${TorDestinationFiles[tor_destination_dir]}" || return 1
 
 	_add_script_tor_cli
 	_add_desktop_file
@@ -670,11 +673,11 @@ _install_torbrowser_online_package()
 	}
 
 	print_line
-	_verify_keyring "$DIR_DOWNLOAD/$tor_online_package" || return 1
+	_verify_keyring_tor "$DIR_DOWNLOAD/$tor_online_package" || return 1
 	_unpack "$DIR_DOWNLOAD/$tor_online_package" || return 1
-	printf "${CGreen}I${CReset}nstalado tor em ... ${TorDestinationFiles[tor_destination]}\n"
+	printf "${CGreen}I${CReset}nstalado tor em ... ${TorDestinationFiles[tor_destination_dir]}\n"
 	cd $DIR_UNPACK # Não Remova.
-	mv tor-* "${TorDestinationFiles[tor_destination]}" || return 1
+	mv tor-* "${TorDestinationFiles[tor_destination_dir]}" || return 1
 
 	_add_script_tor_cli
 	_add_desktop_file
