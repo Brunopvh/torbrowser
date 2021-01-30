@@ -70,8 +70,15 @@ TORBROWSER_LOCAL_SCRIPT=~/.local/bin/tor-installer # local de instalação deste
 tor_path_keyring_file="$TemporaryDir/tor.keyring"
 tor_path_file_asc=''
 
-[[ -f ~/.bashrc ]] && source ~/.bashrc
 [[ -z $HOME ]] && HOME=~/
+
+if [[ -f ~/.bashrc ]] && [[ $(basename $SHELL) == 'bash' ]]; then
+	source ~/.bashrc 2> /dev/null
+fi
+
+if [[ -f ~/.zshrc ]] && [[ $(basename $SHELL) == 'zsh' ]]; then 
+	source ~/.zshrc 2> /dev/null
+fi
 
 print_line()
 {
@@ -187,7 +194,6 @@ configure_zshrc()
 		PATH="$HOME/.local/bin:$PATH" 
 	}
 
-	[[ -f ~/.zshrc ]] && source ~/.zshrc
 	[[ ! -f ~/.zshrc ]] && touch ~/.zshrc
 
 	# Fazer um backup do arquivo ~/.bashrc se não existir.
