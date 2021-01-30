@@ -707,6 +707,8 @@ _remove_torbrowser()
 
 main()
 {
+	[[ -z $1 ]] && ShowLogo && return 0
+	
 	for ARG in "$@"; do
 		case "$ARG" in 
 			-d|--downloadonly) DownloadOnly='True';;
