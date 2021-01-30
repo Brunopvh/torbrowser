@@ -1,6 +1,23 @@
 #!/usr/bin/env bash
+#
+# Este script instala a ultima versão do navegador tor browser em qualquer distribuição Linux.
+# 
+# REQUERIMENTOS:
+#  - Para fazer o download dos arquivos e necessário uma ferramenta de gerenciamento de downloads 
+# via linha de comando curl, wget ou aria2.
+#
+# - gpg - para verificar a integridade do pacote de instalação.
+# - awk - para processamento de textos.
+#
+# Wiki apenas para sistemas Debian.
+# https://wiki.debian.org/Backports#Adding_the_repository
+# https://wiki.debian.org/TorBrowser
+# deb http://deb.debian.org/debian buster-backports main contrib non-free
+# 
+#
+#
 
-__version__='2021_01_27'
+__version__='2021_01_29'
 __appname__='torbrowser-installer'
 __script__=$(readlink -f "$0")
 
@@ -10,6 +27,9 @@ CYellow='\033[0;33m'
 CBlue='\033[0;34m'
 CWhite='\033[0;37m'
 CReset='\033[m'
+
+DELAY='0.05'
+StatusOutput='0'
 
 # Usuário não pode ser o root.
 if [[ $(id -u) == '0' ]]; then
@@ -33,8 +53,10 @@ TorDestinationFiles=(
 	[tor_file_desktop]=~/".local/share/applications/start-tor-browser.desktop"
 )
 
+# Informações online
 TOR_PROJECT_DOWNLOAD='https://www.torproject.org/download'
 TOR_ONLINE_PACKAGES='https://dist.torproject.org/torbrowser'
+TORBROWSER_INSTALLER_ONLINE_SCRIPT='https://raw.github.com/Brunopvh/torbrowser/master/tor.sh'
 tor_online_path=''
 tor_online_version=''
 tor_online_package=''
@@ -42,9 +64,11 @@ tor_online_file_asc=''
 url_download_torbrowser=''
 url_download_torbrowser_asc=''
 url_tor_gpgkey='https://openpgpkey.torproject.org/.well-known/openpgpkey/torproject.org/hu/kounek7zrdx745qydx6p59t9mqjpuhdf'
-path_tor_gpgkey="$TemporaryDir/tor.keyring"
-TORBROWSER_INSTALLER_ONLINE_SCRIPT='https://raw.github.com/Brunopvh/torbrowser/master/tor.sh'
-TORBROWSER_LOCAL_SCRIPT=~/.local/bin/tor-installer
+
+# Informações locais.
+TORBROWSER_LOCAL_SCRIPT=~/.local/bin/tor-installer # Script para chamada via linha de comando.
+tor_path_keyring_file="$TemporaryDir/tor.keyring"
+tor_path_file_asc=''
 
 print_line()
 {
@@ -96,6 +120,7 @@ ShowLogo()
 
 get_extension_file()
 {
+	# Usar o comando "file" para saber qual o cabeçalho de um arquivo qualquer.
 	[[ -z $1 ]] && return 1
 	is_executable file || {
 		echo 'None'
@@ -108,6 +133,7 @@ get_extension_file()
 __rmdir__()
 {
 	# Função para remover diretórios e arquivos.
+	# $1 = arquivo/diretório ou ambos. Também pode ser um array, com arquivos é diretórios.
 	
 	[[ -z $1 ]] && return 
 	while [[ $1 ]]; do		
@@ -123,7 +149,7 @@ __rmdir__()
 			printf "${CRed}Não encontrado ... $1${CReset}\n"
 		fi
 		shift
-		sleep 0.08
+		sleep "$DELAY"
 	done
 }
 
@@ -158,20 +184,20 @@ _show_loop_procs()
 _unpack()
 {
 	# Obrigatório informar um arquivo no argumento $1.
-	if [[ ! -f "$1" ]]; then
+	[[ ! -f "$1" ]] && {
 		printf "${CRed}(_unpack): nenhum arquivo informado como argumento${CReset}\n"
 		return 1
-	fi
+	}
 
 	printf "Entrando no diretório ... $DIR_UNPACK\n"
 	cd "$DIR_UNPACK"
 
-	if [[ ! -w "$DIR_UNPACK" ]]; then
+	[[ ! -w "$DIR_UNPACK" ]] && {
 		printf "${CRed}(_unpack): Você não tem permissão de escrita [-w] em ... $DIR_UNPACK${CReset}\n"
 		return 1
-	fi
+	}
 	
-	__rmdir__ $(ls)
+	__rmdir__ $(ls) # Limpar o diretório temporário.
 	path_file="$1"
 
 	# Detectar a extensão do arquivo.
@@ -210,13 +236,7 @@ _unpack()
 
 	# echo -e "$(date +%H:%M:%S)"
 	_show_loop_procs "$!" "Descompactando ... $(basename $path_file)"
-
-	# Verificar se a extração foi concluida com sucesso.
-	if [[ "$?" != '0' ]]; then
-		printf "${CRed}(_unpack): Descompressão falhou.${CReset}\n"
-		__rmdir__ "$path_file"
-		return 1
-	fi
+	return 0
 }
 
 _ping()
@@ -264,10 +284,10 @@ __download__()
 	printf "Conectando ... $1\n"
 	
 	while true; do
-		if is_executable curl; then
-			curl -C - -S -L -o "$2" "$1" && break
-		elif is_executable aria2c; then
+		if is_executable aria2c; then
 			aria2c -c "$1" -d "$(dirname $2)" -o "$(basename $2)" && break
+		elif is_executable curl; then
+			curl -C - -S -L -o "$2" "$1" && break
 		elif is_executable wget; then
 			wget -c "$1" -O "$2" && break
 		else
@@ -455,7 +475,7 @@ _set_tor_data()
 	url_download_torbrowser_asc="${url_download_torbrowser}.asc"
 }
 
-update_script_torbrowser()
+__self_update__()
 {
 	# Obter o script online no github.
 	ShowLogo
@@ -505,7 +525,7 @@ _savefile_torbrowser_package()
 		printf "${CRed}Você não tem permissão de escrita em ... $(dirname $1)${CReset}\n"
 		return 1
 	}
-	ShowLogo
+
 	_set_tor_data 
 	__download__ "$url_download_torbrowser" "$1" || return 1
 	__download__ "$url_download_torbrowser_asc" "${1}.asc" || return 1
@@ -513,7 +533,7 @@ _savefile_torbrowser_package()
 	return 0
 }
 
-_save_torbrowser_package()
+_save_torbrowser_in_dir()
 {
 	# Salva o tor com o nome de servidor no diretório especificado no argumento da opção -s|--save-dir
 	[[ -z $1 ]] && return 1
@@ -527,7 +547,7 @@ _save_torbrowser_package()
 		printf "${CRed}Você não tem permissão de escrita em ... $1${CReset}\n"
 		return 1
 	}
-	ShowLogo
+
 	_set_tor_data 
 	__download__ "$url_download_torbrowser" "$1/$tor_online_package" || return 1
 	__download__ "$url_download_torbrowser_asc" "$1/${tor_online_package}.asc" || return 1
@@ -535,9 +555,28 @@ _save_torbrowser_package()
 	return 0
 }
 
-_remove_torbrowser()
-{
-	__rmdir__ "${TorDestinationFiles[@]}"
+_verify_keyring(){
+	# $1 = Pacote tar.xz a ser usado na instalação.
+	[[ ! -f $1 ]] && {
+		printf "${CRed}(_verify_keyring): parâmetro incorreto detectado.${CReset}\n"
+		return 1
+	}
+
+	printf "Gerando arquivo ... $tor_path_keyring_file "	
+	if gpg --output "$tor_path_keyring_file" --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290; then
+		printf "OK\n"
+	else
+		printf "${CRed}Falha ao tentar gerar o arquivo $tor_path_keyring_file${CReset}\n"
+		return 1
+	fi
+
+	printf "Executando ... gpgv --keyring "
+	gpgv --keyring $tor_path_keyring_file $tor_path_file_asc "$1" 1> /dev/null 2>&1 || {
+		printf "${CRed}Falha${CReset}\n"
+		return 1
+	}
+	printf "OK\n"
+	return 0
 }
 
 _add_script_tor_cli()
@@ -565,31 +604,27 @@ _add_desktop_file(){
 
 _install_local_file()
 {
-	# Instalar o tor apartir de um arquivo no disco rigido local informado pelo usuário.
-	# 
+	# Instalar o tor apartir de um arquivo no disco rigido local informado pelo usuário. 
 
-	[[ -z $1 ]] && return 1
+	is_executable 'torbrowser' && {
+		printf "Já instalado use ${CYellow}$__script__ --remove${CReset} para desinstalar o tor.\n"
+		return 0
+	}
+
+	[[ -z $1 ]] && { 
+		printf "${CRed}(_install_local_file): parâmetro incorreto detectado.${CReset}\n"
+		return 1
+	}
 
 	[[ ! -f $1 ]] && {
 		printf "${CRed}Arquivo não existe ... $1${CReset}\n"
 		return 1
 	}
 
-	local tor_online_version='1.0'
-	local tor_path_file_asc="${1}.asc"
-	ShowLogo
-	printf "${CGreen}G${CReset}erando arquivo de verificação "
-	gpg --output "$path_tor_gpgkey" --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290 || {
-		printf "${CRed}Falha${CReset}\n"
-		return 1
-	}
-	printf "OK\n"
-	printf "Executando ... gpgv --keyring "
-	gpgv --keyring $path_tor_gpgkey $tor_path_file_asc $1 1> /dev/null 2>&1 || {
-		printf "${CRed}Falha${CReset}\n"
-		return 1	
-	}
-	printf "OK\n"
+	tor_online_version='1.0'
+	tor_path_file_asc="${1}.asc"
+
+	_verify_keyring "$1" || return 1
 	_unpack "$1" || return 1
 	printf "${CGreen}I${CReset}nstalado tor em ... ${TorDestinationFiles[tor_destination]}\n"
 	cd $DIR_UNPACK # Não Remova.
@@ -610,12 +645,17 @@ _install_local_file()
 	return 0
 }
 
-_install_torbrowser()
+_install_torbrowser_online_package()
 {
 	# https://support.torproject.org/tbb/how-to-verify-signature/
 	# gpg --auto-key-locate nodefault,wkd --locate-keys torbrowser@torproject.org
 	# gpg --output ./tor.keyring --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290
-	ShowLogo
+
+	is_executable 'torbrowser' && {
+		printf "Já instalado use ${CYellow}$__script__ --remove${CReset} para desinstalar o tor.\n"
+		return 0
+	}
+
 	_set_tor_data || return 1
 	local tor_path_file_asc="$DIR_DOWNLOAD/$tor_online_file_asc"
 	local user_shell=$(grep ^$USER /etc/passwd | cut -d ':' -f 7)
@@ -624,32 +664,13 @@ _install_torbrowser()
 	__download__ "$url_download_torbrowser_asc" "$tor_path_file_asc" || return 1
 
 	# O usuario passou o parâmetro --downloadonly.
-	if [[ "$DownloadOnly" == 'True' ]]; then
+	[[ "$DownloadOnly" == 'True' ]] && {
 		printf "%sFeito somente download pois a opção '--downloadonly' foi passada como argumento.\n"
 		return 0
-	fi
-
-	if is_executable 'torbrowser'; then
-		printf "Já instalado use ${CYellow}$__script__ --remove${CReset} para desinstalar o tor.\n"
-		return 0
-	fi
-
-	print_line
-	gpg_import "$url_tor_gpgkey" || return 1
-	printf "Gerando arquivo ... $path_tor_gpgkey\n"	
-	gpg --output "$path_tor_gpgkey" --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290 || {
-		printf "${CRed}Falha ao tentar gerar o arquivo $path_tor_gpgkey${CReset}\n"
-		return 1
 	}
 
-	printf "Executando ... gpgv --keyring "
-	if gpgv --keyring $path_tor_gpgkey $tor_path_file_asc $DIR_DOWNLOAD/$tor_online_package 1> /dev/null 2>&1; then
-		printf "OK\n"
-	else
-		printf "${CRed}Falha${CReset}\n"
-		return 1
-	fi
-
+	print_line
+	_verify_keyring "$DIR_DOWNLOAD/$tor_online_package" || return 1
 	_unpack "$DIR_DOWNLOAD/$tor_online_package" || return 1
 	printf "${CGreen}I${CReset}nstalado tor em ... ${TorDestinationFiles[tor_destination]}\n"
 	cd $DIR_UNPACK # Não Remova.
@@ -670,6 +691,10 @@ _install_torbrowser()
 	return 0
 }
 
+_remove_torbrowser()
+{
+	__rmdir__ "${TorDestinationFiles[@]}"
+}
 
 main()
 {
@@ -683,22 +708,17 @@ main()
 
 	while [[ $1 ]]; do
 		case "$1" in
-			-i|--install) _install_torbrowser; return; break;;
+			-i|--install) _install_torbrowser_online_package; return; break;;
 			-r|--remove) _remove_torbrowser; return; break;;
-			-s|--save-dir) shift; _save_torbrowser_package "$@"; return; break;;
+			-s|--save-dir) shift; _save_torbrowser_in_dir "$@"; return; break;;
 			-S|--save-file) shift; _savefile_torbrowser_package "$@"; return; break;;
 			-f|--file) shift; _install_local_file "$@"; return; break;;
-			-u|--self-update) update_script_torbrowser; return; break;;
+			-u|--self-update) __self_update__; return; break;;
 		esac
 		shift
 	done
 }
 
-if [[ $1 ]]; then
-	main "$@"
-else
-	ShowLogo
-fi
-
+main "$@"
 __rmdir__ $TemporaryDir $TemporaryFile 1> /dev/null 
 
