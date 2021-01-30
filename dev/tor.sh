@@ -48,7 +48,7 @@ mkdir -p ~/.local/bin
 
 declare -A TorDestinationFiles
 TorDestinationFiles=(
-	[tor_destination_dir]=~/".local/bin/torbrowser-amd64"
+	[tor_destination_dir]=~/".local/share/torbrowser-amd64"
 	[tor_executable_script]=~/".local/bin/torbrowser"
 	[tor_file_desktop]=~/".local/share/applications/start-tor-browser.desktop"
 )
@@ -67,7 +67,7 @@ url_tor_gpgkey='https://openpgpkey.torproject.org/.well-known/openpgpkey/torproj
 
 # Informações locais.
 TORBROWSER_LOCAL_SCRIPT=~/.local/bin/tor-installer # local de instalação deste script.
-tor_path_keyring_file="$TemporaryDir/tor.keyring"
+tor_temp_keyring_file="$TemporaryDir/tor.keyring"
 tor_path_file_asc=''
 
 [[ -z $HOME ]] && HOME=~/
@@ -571,16 +571,16 @@ _verify_keyring_tor(){
 		return 1
 	}
 
-	printf "Gerando arquivo ... $tor_path_keyring_file "	
-	if gpg --output "$tor_path_keyring_file" --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290; then
+	printf "Gerando arquivo ... $tor_temp_keyring_file "	
+	if gpg --output "$tor_temp_keyring_file" --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290; then
 		printf "OK\n"
 	else
-		printf "${CRed}Falha ao tentar gerar o arquivo $tor_path_keyring_file${CReset}\n"
+		printf "${CRed}Falha ao tentar gerar o arquivo $tor_temp_keyring_file${CReset}\n"
 		return 1
 	fi
 
 	printf "Executando ... gpgv --keyring "
-	gpgv --keyring $tor_path_keyring_file $tor_path_file_asc "$1" 1> /dev/null 2>&1 || {
+	gpgv --keyring $tor_temp_keyring_file $tor_path_file_asc "$1" 1> /dev/null 2>&1 || {
 		printf "${CRed}Falha${CReset}\n"
 		return 1
 	}
@@ -617,6 +617,11 @@ _install_local_file()
 
 	is_executable 'torbrowser' && {
 		printf "Já instalado use ${CYellow}$__script__ --remove${CReset} para desinstalar o tor.\n"
+		return 0
+	}
+
+	[[ -d "${TorDestinationFiles[tor_destination_dir]}" ]] && {
+		printf "Tor já instalado em ... ${TorDestinationFiles[tor_destination_dir]}\n"
 		return 0
 	}
 
@@ -665,6 +670,11 @@ _install_torbrowser_online_package()
 		return 0
 	}
 
+	[[ -d "${TorDestinationFiles[tor_destination_dir]}" ]] && {
+		printf "Tor já instalado em ... ${TorDestinationFiles[tor_destination_dir]}\n"
+		return 0
+	}
+
 	_set_tor_data || return 1
 	local tor_path_file_asc="$DIR_DOWNLOAD/$tor_online_file_asc"
 	local user_shell=$(grep ^$USER /etc/passwd | cut -d ':' -f 7)
@@ -708,7 +718,7 @@ _remove_torbrowser()
 main()
 {
 	[[ -z $1 ]] && ShowLogo && return 0
-	
+
 	for ARG in "$@"; do
 		case "$ARG" in 
 			-d|--downloadonly) DownloadOnly='True';;
