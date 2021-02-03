@@ -17,7 +17,7 @@
 #
 #
 
-__version__='2021_01_30'
+__version__='2021_02_02'
 __appname__='torbrowser-installer'
 __script__=$(readlink -f "$0")
 
@@ -125,6 +125,34 @@ ShowLogo()
 	echo -e "${CYellow}A${CReset}utor: Bruno Chaves"
 	echo -e "${CYellow}G${CReset}ithub: $RepoTorbrowserInstaller"
 	print_line
+}
+
+_YESNO()
+{
+	# Será necessário indagar o usuário repetidas vezes durante a execução
+	# do programa, em que a resposta deve ser do tipo SIM ou NÃO (s/n)
+	# esta função automatiza as indagações.
+	#
+	#   se teclar "s" -----------------> retornar 0  
+	#   se teclar "n" ou nada ---------> retornar 1.
+	#
+	# $1 = Mensagem a ser exibida para o usuário, a resposta deve ser SIM ou NÃO (s/n).
+	
+	# O usuário não deve ser indagado caso a opção "-y" ou --yes esteja presente 
+	# na linha de comando. Nesse caso a função irá retornar '0' como se o usuário estivesse
+	# aceitando todas as indagações.
+	[[ "$AssumeYes" == 'True' ]] && return 0
+		
+	printf "$@ ${CYellow}s${CReset}/${CRed}N${CReset}?: "
+	read -t 15 -n 1 sn
+	echo ' '
+
+	if [[ "${sn,,}" == 's' ]]; then
+		return 0
+	else
+		printf "${CRed}Abortando${CReset}\n"
+		return 1
+	fi
 }
 
 get_extension_file()
@@ -572,7 +600,7 @@ _verify_keyring_tor(){
 	}
 
 	printf "Gerando arquivo ... $tor_temp_keyring_file "	
-	if gpg --output "$tor_temp_keyring_file" --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290; then
+	if gpg --output "$tor_temp_keyring_file" --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290 1> /dev/null 2>&1; then
 		printf "OK\n"
 	else
 		printf "${CRed}Falha ao tentar gerar o arquivo $tor_temp_keyring_file${CReset}\n"
@@ -689,7 +717,10 @@ _install_torbrowser_online_package()
 	}
 
 	print_line
-	_verify_keyring_tor "$DIR_DOWNLOAD/$tor_online_package" || return 1
+	_verify_keyring_tor "$DIR_DOWNLOAD/$tor_online_package" || {
+		_YESNO "Deseja prosseguir com a instalação" || return 1
+	}
+
 	_unpack "$DIR_DOWNLOAD/$tor_online_package" || return 1
 	printf "${CGreen}I${CReset}nstalado tor em ... ${TorDestinationFiles[tor_destination_dir]}\n"
 	cd $DIR_UNPACK # Não Remova.
