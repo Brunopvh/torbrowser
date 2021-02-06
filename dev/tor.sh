@@ -17,7 +17,7 @@
 #
 #
 
-__version__='2021_02_02'
+__version__='2021_02_06'
 __appname__='torbrowser-installer'
 __script__=$(readlink -f "$0")
 
@@ -717,6 +717,7 @@ _install_torbrowser_online_package()
 	}
 
 	print_line
+	gpg_import "$url_tor_gpgkey"
 	_verify_keyring_tor "$DIR_DOWNLOAD/$tor_online_package" || {
 		_YESNO "Deseja prosseguir com a instalação" || return 1
 	}
