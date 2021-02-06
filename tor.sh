@@ -520,7 +520,7 @@ __self_update__()
 	
 	printf "Obtendo o arquivo de atualização no github "
 	if is_executable aria2c; then
-		aria2c -c "$TORBROWSER_INSTALLER_ONLINE_SCRIPT" -d "$TemporaryDir" -o "torbrowser_script_update.sh" 1> /dev/null
+		aria2c "$TORBROWSER_INSTALLER_ONLINE_SCRIPT" -d "$TemporaryDir" -o "torbrowser_script_update.sh" 1> /dev/null
 	elif is_executable curl; then
 		curl -fsSL -o "$TemporaryDir/torbrowser_script_update.sh" "$TORBROWSER_INSTALLER_ONLINE_SCRIPT"
 	elif is_executable wget; then
