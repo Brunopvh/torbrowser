@@ -130,7 +130,7 @@ install_shell_package_manager()
 	chmod +x "$_tmpfile"
 	"$_tmpfile"
 	rm -rf "$_tmpfile"
-	unset "$_tmpfile"
+	unset _tmpfile
 
 	# Depois de executar o intalador, teremos o gerenciador de módulos bash(shm) disponível.
 	# basta proseguir com a instalação dos módulos requeridos.
@@ -377,15 +377,15 @@ _install_local_file()
 	tor_path_file_asc="${1}.asc"
 
 	_verify_keyring_tor "$1" || return 1
-	_unpack "$1" || return 1
+	unpack "$1" $DIR_UNPACK || return 1
 	echo -e "${CSGreen}I${CReset}nstalado tor em ... ${destinationFilesTorbrowser[dir]}"
 	cd $DIR_UNPACK # Não Remova.
 	mv tor-* "${destinationFilesTorbrowser[dir]}" || return 1
 
 	_add_script_tor_cli
 	_add_desktop_file
-	configure_bashrc
-	configure_zshrc
+	config_bashrc
+	config_zshrc
 	
 	if is_executable 'torbrowser'; then
 		printf "TorBrowser instalado com sucesso\n"
@@ -432,21 +432,21 @@ _install_torbrowser_online_package()
 		question "Deseja prosseguir com a instalação" || return 1
 	}
 
-	_unpack "$DIR_DOWNLOAD/$tor_online_package" || return 1
+	unpack "$DIR_DOWNLOAD/$tor_online_package" $DIR_UNPACK || return 1
 	printf "${CSGreen}I${CReset}nstalado tor em ... ${destinationFilesTorbrowser[dir]}\n"
 	cd $DIR_UNPACK # Não Remova.
 	mv tor-* "${destinationFilesTorbrowser[dir]}" || return 1
 
 	_add_script_tor_cli
 	_add_desktop_file
-	configure_bashrc
-	configure_zshrc
+	config_bashrc
+	config_zshrc
 	
 	if is_executable 'torbrowser'; then
-		printf "TorBrowser instalado com sucesso\n"
+		print_info "TorBrowser instalado com sucesso"
 		torbrowser # Abrir o navegador.
 	else
-		printf "${CSRed}Falha ao tentar instalar TorBrowser${CReset}\n"
+		print_erro "Falha ao tentar instalar TorBrowser"
 		return 1
 	fi
 	return 0
@@ -454,6 +454,7 @@ _install_torbrowser_online_package()
 
 _remove_torbrowser()
 {
+	export AssumeYes='True'
 	__rmdir__ "${destinationFilesTorbrowser[@]}"
 }
 
