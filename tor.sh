@@ -17,7 +17,7 @@
 #
 #
 
-__version__='2021_02_06'
+__version__='0.1.0'
 __appname__='torbrowser-installer'
 __script__=$(readlink -f "$0")
 
