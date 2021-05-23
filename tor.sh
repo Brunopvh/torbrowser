@@ -45,7 +45,7 @@ mkdir -p ~/.local/bin
 
 # Informações online
 TORBROWSER_INSTALLER_ONLINE_SCRIPT='https://raw.github.com/Brunopvh/torbrowser/master/tor.sh'
-URL_INSTALLER_SHM='https://raw.github.com/Brunopvh/bash-libs/main/setup.sh'
+URL_INSTALLER_SHM='https://raw.github.com/Brunopvh/bash-libs/release-0.1.0/setup.sh'
 TOR_PROJECT_DOWNLOAD='https://www.torproject.org/download'
 TOR_ONLINE_PACKAGES='https://dist.torproject.org/torbrowser'
 url_tor_gpgkey='https://openpgpkey.torproject.org/.well-known/openpgpkey/torproject.org/hu/kounek7zrdx745qydx6p59t9mqjpuhdf'
@@ -111,7 +111,12 @@ install_shell_package_manager()
 {
 	# Instala o shell-packager-manager(shm)
 	# GitHub: https://raw.github.com/Brunopvh/bash-libs
-	# bash -c "$(wget -q -O- https://raw.github.com/Brunopvh/bash-libs/main/setup.sh)"
+	# Link da versão master:
+	#    bash -c "$(wget -q -O- https://raw.github.com/Brunopvh/bash-libs/main/setup.sh)"
+	#
+	# Link da versão estável(0.1.0): 
+	#    bash -c "$(wget -q -O- https://raw.github.com/Brunopvh/bash-libs/release-0.1.0/setup.sh)"
+	#
 	local _tmpfile=$(mktemp -u)
 
 	echo -ne "Conectando ... $URL_INSTALLER_SHM "
