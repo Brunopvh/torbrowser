@@ -18,7 +18,7 @@
 # 1 -    Fazer somente o download do arquivo de instalação do torbrowser em cache para instalar
 #     mais tarde ou mesmo offline (use --downloadonly).
 #
-# 2 -   Fazer o download do arquivo de instalação em um caminho especifico (use a opção --output)
+# 2 - Fazer o download do arquivo de instalação em um caminho especifico (use a opção --output)
 #
 # 3 - Instalar apartir de um arquivo já baixado localmente (use a opção --file <arquivo>). 
 #
@@ -34,22 +34,38 @@
 #
 #
 
+
+# Usuário não pode ser o root.
+[[ $(id -u) == '0' ]] && {
+	echo -e "ERRO ... Usuário não pode ser o 'root' saindo"
+	exit 1
+}
+
 __version__='0.1.2'
 __appname__='tor-installer'
 __script__=$(readlink -f "$0")
-
 
 # Informações padrão
 TOR_PROJECT_DOWNLOAD='https://www.torproject.org/download'
 TOR_ONLINE_PACKAGES='https://dist.torproject.org/torbrowser'
 TOR_INSTALLER_ONLINE='https://raw.github.com/Brunopvh/torbrowser/master/tor.sh'
-url_download_torbrowser='https://dist.torproject.org/torbrowser/10.0.17/tor-browser-linux64-10.0.17_en-US.tar.xz'
-url_download_torbrowser_asc='https://dist.torproject.org/torbrowser/10.0.17/tor-browser-linux64-10.0.17_en-US.tar.xz.asc'
+
+# Informações online
 url_tor_gpgkey='https://openpgpkey.torproject.org/.well-known/openpgpkey/torproject.org/hu/kounek7zrdx745qydx6p59t9mqjpuhdf'
-tor_online_path=''
-tor_online_version=''
-tor_online_package=''
-tor_online_file_asc=''
+url_download_torbrowser=null
+url_download_torbrowser_asc=null
+tor_online_path=null
+tor_online_version=null
+tor_online_package=null
+tor_online_file_asc=null
+
+# Lista com os arquivos e diretórios utilizados na instalação do torbrowser
+declare -A INSTALATION_DIRS
+INSTALATION_DIRS=(
+	[dir]=~/.local/share/torbrowser-x86_64
+	[script]=~/.local/bin/torbrowser
+	[desktop_cfg]=~/.local/share/applications/start-tor-browser.desktop
+)
 
 TempDir=$(mktemp -d)
 UnpackDir="$TempDir/unapck"
@@ -57,6 +73,7 @@ CacheDir=~/.cache/"${__appname__}"
 
 DELAY='0.05'
 StatusOutput=0
+clientDownloader=null
 CRed='\033[0;31m'
 CGreen='\033[0;32m'
 CYellow='\033[0;33m'
@@ -87,89 +104,103 @@ EOF
 
 }
 
-function show_error()
+function print_erro()
 {
 	echo -e "${CRed}ERRO${CReset} ... $@"
 }
-
-# Usuário não pode ser o root.
-[[ $(id -u) == '0' ]] && {
-	show_error "Usuário não pode ser o 'root' saindo"
-	exit 1
-}
-
-# Setar a ferramenta de downloads
-if [[ -x $(command -v aria2c) ]]; then
-	clientDownloader='aria2c'
-elif [[ -x $(command -v wget) ]]; then
-	clientDownloader='wget'
-elif [[ -x $(command -v curl) ]]; then
-	clientDownloader='curl'
-else
-	show_error "instale a ferramenta curl para prosseguir"
-	echo -e "sudo apt install -y curl"
-	exit 1
-fi
 
 function print_line()
 {
 	printf "%-$(tput cols)s" | tr ' ' '-'
 }
 
+function setClientDownloader()
+{
+	# Setar a ferramenta de downloads
+	if [[ -x $(command -v aria2c) ]]; then
+		clientDownloader='aria2c'
+	elif [[ -x $(command -v wget) ]]; then
+		clientDownloader='wget'
+	elif [[ -x $(command -v curl) ]]; then
+		clientDownloader='curl'
+	else
+		print_erro "instale a ferramenta curl para prosseguir ... ${CGreen}sudo apt install curl${CReset}"
+		return 1
+	fi
+}
+
 function verify_requeriments()
 {
-	local REQUERIMENTS=(gpg vbal)
-	for REQ in "${REQUERIMENTS}"; do
+	local REQUERIMENTS=(gpg ping tar file)
+	for REQ in "${REQUERIMENTS[@]}"; do
 			if [[ ! -x $(command -v "$REQ") ]]; then
-				show_error "requerimento não encontrado => $REQ"
-				break
+				print_erro "requerimento não encontrado => $REQ"
 				sleep "$DELAY"
 				return 1
+				break
 			fi
 	done
 }
 
 function create_dirs()
 {
-	mkdir -p "$TempDir"
-	mkdir -p "$UnpackDir"
-	mkdir -p "$CacheDir"
+	mkdir -p "$TempDir" 2> /dev/null
+	mkdir -p "$UnpackDir" 2> /dev/null
+	mkdir -p "$CacheDir" 2> /dev/null
+	mkdir -p ~/.local/share/torbrowser-x86_64
+	mkdir -p ~/.local/bin
+	mkdir -p ~/.local/share/applications
 }
 
 function clean_dirs()
 {
 	rm -rf "$TempDir" 2> /dev/null
 	rm -rf "$UnpackDir" 2> /dev/null
-	rm -rf "$CacheDir" 2> /dev/null
 }
-
 
 function unpack_tor()
 {
-	# $1 = arquivo a ser descomprimido - (obrigatório)
-	echo -e "$1"
-	if [[ ! -f "$1" ]]; then
-		show_error "(unpack_tor) Nenhum arquivo informado no parâmetro 1."
+	# $1 = arquivo a ser descomprimido.
+	local path_file="$1"
+
+	if [[ ! -f "$path_file" ]]; then
+		print_erro "(unpack_tor) Nenhum arquivo informado como parâmetro."
 		return 1
 	fi
 
 	if [[ ! -w "$UnpackDir" ]]; then 
-		show_error "Você não tem permissão de escrita [-w] em ... $UnpackDir"
+		print_erro "Você não tem permissão de escrita [-w] em ... $UnpackDir"
 		return 1	
 	fi
 
+	# Verificar o tipo de extensão do arquivo.
+	type_file=$(file "$1" | cut -d ' ' -f 2)
+	echo $type_file; return
+
 	echo -e "Entrando no diretório ... $UnpackDir"
 	cd "$UnpackDir"
-	path_file="$1"
+	
+	echo -ne "Descompactando ... $(basename $path_file) "
+	case "$type_file" in
+		XZ) tar -Jxf "$path_file" -C "$UnpackDir" 1> /dev/null 2>&1;;
+		GZIP) tar -zxvf "$path_file" -C "$DirUnpack" 1> /dev/null 2>&1;;
+	esac
 
-	echo -ne "Descompactando ... $path_file "
-	tar -Jxf "$path_file" -C "$UnpackDir" 1> /dev/null 2>&1
 	[[ "$?" != 0 ]] && echo -e "${CRed}ERRO${CReset}" && return "$?"
 	echo 'OK'
 	return 0
 	# echo -e "$(date +%H:%M:%S)"
 }
 
+function check_internet()
+{
+	if ! ping -c 1 8.8.8.8 1> /dev/null 2>&1; then
+		print_erro "Verifique sua conexão com a internet."
+		sleep "$DELAY"
+		return 1
+	fi
+	return 0
+}
 
 function download()
 {
@@ -181,52 +212,43 @@ function download()
 	# https://aria2.github.io/manual/pt/html/README.html
 	# 
 	# $1 = URL
-	# $2 = Output File - (Opcional)
+	# $2 = Output File
 	#
 
 	[[ -f "$2" ]] && {
-		blue "Arquivo encontrado ... $2"
+		echo -e "Arquivo encontrado ... $2"
 		return 0
+	}
+
+	[[ -z $2 ]] && {
+		print_erro "(download) parâmetro incorreto detectado."
+		return 1
 	}
 
 	local url="$1"
 	local path_file="$2"
 
-	if [[ "$clientDownloader" == 'None' ]]; then
+	if [[ "$clientDownloader" == 'null' ]]; then
 		print_erro "(download) Instale curl|wget|aria2c para prosseguir."
-		sleep 0.1
+		sleep "$DELAY"
 		return 1
 	fi
 
-	#__ping__ || return 1
-	echo -e "Conectando ... $url"
-	if [[ ! -z $path_file ]]; then
-		case "$clientDownloader" in 
-			aria2c) 
-					aria2c -c "$url" -d "$(dirname $path_file)" -o "$(basename $path_file)" 
-					;;
-			curl)
-				curl -C - -S -L -o "$path_file" "$url"
-					;;
-			wget)
-				wget -c "$url" -O "$path_file"
-					;;
-			*) show_error "download";;
-		esac
-	else
-		case "$clientDownloader" in 
-			aria2c) 
-					aria2c -c "$url"
-					;;
-			curl)
-					curl -C - -S -L -O "$url"
-					;;
-			wget)
-				wget -c "$url"
-					;;
-		esac
-	fi
-
+	check_internet || return 1
+	echo -e "Baixando ... $url"	
+	case "$clientDownloader" in 
+		aria2c) 
+				aria2c -c "$url" -d "$(dirname $path_file)" -o "$(basename $path_file)" 
+				;;
+		curl)
+			curl -C - -S -L -o "$path_file" "$url"
+				;;
+		wget)
+			wget -c "$url" -O "$path_file"
+				;;
+		*) print_erro "download";;
+	esac
+	
 	[[ $? == 0 ]] && return 0
 	print_erro '(download)'
 	return 1
@@ -237,7 +259,7 @@ function getHtmlText()
 {
 	# Função para fazer o request em páginas html e retornar o conteúdo no STDOUT.
 	if [[ -z $1 ]]; then
-		show_error "Nenhum url foi passado como parâmetro"
+		print_erro "Nenhum url foi passado como parâmetro"
 		return 1
 	fi
 
@@ -254,13 +276,14 @@ function getHtmlText()
 	unset temp_file
 }
 
-function install_torbrowser()
+function setOnlineValues()
 {
-	create_dirs
-
 	# Filtrar o url de download no html online e gravar o filtro em um arquivo temporário
 	local temp_html=$(mktemp -u)
-	getHtmlText 'https://www.torproject.org/download' | grep -m 1 'torbrowser.*en-US.tar.xz' > "$temp_html"
+	if ! getHtmlText 'https://www.torproject.org/download' | grep -m 1 'torbrowser.*en-US.tar.xz' > "$temp_html"; then
+		print_erro "(setOnlineValues)"
+		return 1
+	fi
 	sed -i 's|.*href="||g;s|">||g' "$temp_html"
 
 	# Formar a url de download do arquivo tar.xz apartir dos dados obtidos
@@ -269,33 +292,84 @@ function install_torbrowser()
 	tor_online_package=$(cat "$temp_html" | cut -d '/' -f 5)
 	url_download_torbrowser="https://dist.torproject.org/torbrowser/${tor_online_version}/${tor_online_package}"
 	url_download_torbrowser_asc="${url_download_torbrowser}.asc"
-	
-	download "$url_download_torbrowser" "${CacheDir}/${tor_online_package}" || return 1
-	return
-	unpack_tor "${CacheDir}/${tor_online_package}" || return 1
-
 	rm -rf "$temp_html" 2> /dev/null
 	unset temp_html
+}
+
+function uninstall_torbrowser()
+{
+	echo -ne "Desinstalando torbrowser ... "
+	for file in "${INSTALATION_DIRS[@]}"; do
+		rm -rf "$file" 2> /dev/null
+	done
+
+	if [[ -f ~/'Área de Trabalho'/'start-tor-browser.desktop' ]]; then
+		rm -rf ~/'Área de Trabalho'/'start-tor-browser.desktop'
+	elif [[ -f ~/'Desktop'/'start-tor-browser.desktop' ]]; then
+		rm -rf ~/'Desktop'/'start-tor-browser.desktop'
+	fi
+
+	echo -e "OK"
+}
+
+function configure_user_path()
+{
+	echo
+}
+
+function create_desktop_cfg()
+{
+	# Criar arquivo .desktop e copiar para Área de trabalho
+	cd "${INSTALATION_DIRS[dir]}"
+	./start-tor-browser.desktop --register-app
+
+	if [[ ~/'Área de Trabalho' ]]; then
+		cp "${INSTALATION_DIRS[desktop_cfg]}" ~/'Área de Trabalho'/'start-tor-browser.desktop'
+		chmod 777 ~/'Área de Trabalho'/'start-tor-browser.desktop'
+	elif [[ ~/'Desktop' ]]; then
+		cp "${INSTALATION_DIRS[desktop_cfg]}" ~/'Desktop'/'start-tor-browser.desktop'
+		chmod 777 ~/'Desktop'/'start-tor-browser.desktop'
+	fi
+}
+
+function install_torbrowser()
+{
+	uninstall_torbrowser
+	create_dirs
+	setOnlineValues
+	download "$url_download_torbrowser" "${CacheDir}/${tor_online_package}" || return 1
+	unpack_tor "${CacheDir}/${tor_online_package}" || return 1
+	mv $(ls -d tor-*) tor
+	cd tor
+	cp -R . "${INSTALATION_DIRS[dir]}"/.
+	create_desktop_cfg
+	configure_user_path
 }
 
 function main()
 {
 	verify_requeriments || return 1
+	setClientDownloader || return 1
 
 	while [[ $1 ]]; do
 		case "$1" in
-			-h|--help) usage; break; return 0;;
-			-v|--version) echo -e "$__version__"; break; return 0;;
+			-h|--help) usage; return 0; break;;
+			-v|--version) echo -e "$__version__"; return 0; break;;
 			-i|--install) install_torbrowser;;
-			-r|--remove) ;;
+			-r|--remove) uninstall_torbrowser; return 0; break;;
 			-d|--downloadonly) ;;
 			-o|--output) ;;
 			-f|--file) ;;
-			*) show_error "parametro incorreto detectado"; break; return 1;;
+			*) print_erro "parametro incorreto detectado"; return 1; break;;
 		esac
 		shift
 	done
 }
 
-main "$@" || exit 1
+main "$@" || {
+	clean_dirs
+	exit 1
+}
+
+clean_dirs
 exit 0
