@@ -18,11 +18,11 @@
 #
 
 __version__='0.1.1'
-__appname__='torbrowser-installer'
+__appname__='tor-installer'
 __script__=$(readlink -f "$0")
 
 DELAY='0.05'
-StatusOutput='0'
+StatusOutput=0
 
 # Usuário não pode ser o root.
 [[ $(id -u) == '0' ]] && {
