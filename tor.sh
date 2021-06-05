@@ -42,6 +42,8 @@
 # Histórico de versões 
 #-----------------------------------------------------------#
 #
+# 2021-06-04 - Internalizar o uso da configuração PATH do usuário.
+#
 # 2021-06-03 - Finalizar a codificação da versão 0.1.2 apartir de
 #             agora não este arquivo não terá novas funcionalidades
 #             apenas CORREÇÕES.
@@ -59,7 +61,7 @@
 	exit 1
 }
 
-__version__='0.1.2'
+__version__='0.1.3'
 __appname__='tor-installer'
 __author__='Bruno Chaves'
 __url__='https://github.com/Brunopvh/torbrowser'
@@ -160,12 +162,12 @@ function setClientDownloader()
 
 function showLogo()
 {
-	echo -e "${CRed}$(print_line '*')${CReset}"
-	echo -e "${CGreen} App: $__appname__ $__version__"
-	echo -e " Autor: $__author__"
-	echo -e " Repositório: $__url__${CReset}"
-	#echo -e "${CYellow}$(print_line)${CReset}"
-	print_line
+	echo -e "${CGreen}$(print_line '*')${CReset}"
+	echo -e "${CYellow} A${CReset}pp $__appname__"
+	echo -e "${CYellow} V${CReset}ersão $__version__"
+	echo -e "${CYellow} A${CReset}utor: $__author__"
+	echo -e "${CYellow} R${CReset}epositório: $__url__"
+	echo -e "${CGreen}$(print_line '=')${CReset}"
 }
 
 function verify_requeriments()
@@ -447,25 +449,51 @@ function uninstall_torbrowser()
 	echo -e "OK"
 }
 
+config_bashrc()
+{
+	[[ $(id -u) == 0 ]] && return
+
+	# Inserir ~/.local/bin em PATH.
+	if ! echo "$PATH" | grep "$HOME/.local/bin" 1> /dev/null 2>&1; then
+		PATH="$HOME/.local/bin:$PATH"
+	fi
+
+	touch ~/.bashrc
+	
+	# Se a linha de configuração já existir, encerrar a função aqui.
+	grep "$HOME/.local/bin" ~/.bashrc 1> /dev/null && return 0
+	[[ ! -f ~/.bashrc.bak ]] && cp ~/.bashrc ~/.bashrc.bak 1> /dev/null
+
+	echo "Configurando o arquivo ... ~/.bashrc"
+	sed -i "/^export.*PATH=.*:/d" ~/.bashrc
+	echo "export PATH=$PATH" >> ~/.bashrc
+}
+
+config_zshrc()
+{
+	[[ $(id -u) == 0 ]] && return
+	if [[ -x $(command -v zsh) ]]; then
+		touch ~/.zshrc
+	else
+		return 0
+	fi
+	
+	# Inserir ~/.local/bin em PATH.
+	if ! echo "$PATH" | grep "$HOME/.local/bin" 1> /dev/null 2>&1; then
+		PATH="$HOME/.local/bin:$PATH"
+	fi
+
+	# Se a linha de configuração já existir, encerrar a função aqui.
+	grep "$HOME/.local/bin" ~/.zshrc 1> /dev/null && return 0
+	[[ ! -f ~/.zshrc.bak ]] && cp ~/.zshrc ~/.zshrc.bak 1> /dev/null
+
+	echo "Configurando o arquivo ... ~/.zshrc"
+	sed -i "/^export.*PATH=.*:/d" ~/.zshrc
+	echo "export PATH=$PATH" >> ~/.zshrc
+}
+
 function configure_user_path()
 {
-	# Usar o módulo config_path.sh para inserir ~/.local/bin no PATH do usuário.
-	local SHA_SUM_CONFIG_PATH='44c215516bf34cf2ea76fb619886bc9dd1cc4e51ed59999c82ca3049213a3e2e'
-
-	# Necessário fazer o download do arquivo?
-	if [[ ! -f "$CacheDir"/config_path.sh ]]; then
-		download "$URL_CONFIG_PATH" "$CacheDir"/config_path.sh || return 1
-	fi
-
-	local SHA_SUM_FILE=$(sha256sum "${CacheDir}/config_path.sh" | cut -d ' ' -f 1)
-	if [[ "$SHA_SUM_FILE" != "$SHA_SUM_CONFIG_PATH" ]]; then
-		print_erro "(configure_user_path) o arquivo ${CacheDir}/config_path.sh está corrompido"
-		rm -rf "${CacheDir}/config_path.sh"
-		return 1
-	fi
-	print_line
-	#echo -e "Configurando PATH"
-	source "${CacheDir}/config_path.sh"
 	config_bashrc
 	config_zshrc
 }
