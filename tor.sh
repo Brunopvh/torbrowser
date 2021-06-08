@@ -61,7 +61,7 @@
 	exit 1
 }
 
-__version__='0.1.3'
+__version__='0.1.4'
 __appname__='tor-installer'
 __author__='Bruno Chaves'
 __url__='https://github.com/Brunopvh/torbrowser'
@@ -87,7 +87,7 @@ declare -A INSTALATION_DIRS
 INSTALATION_DIRS=(
 	[dir]=~/.local/share/torbrowser-x86_64
 	[script]=~/.local/bin/torbrowser
-	[desktop_cfg]=~/.local/share/applications/start-tor-browser.desktop
+	[desktop_cfg]=~/'.local/share/applications/start-tor-browser.desktop'
 )
 
 TempDir=$(mktemp -d)
@@ -167,7 +167,7 @@ function showLogo()
 	echo -e "${CYellow} V${CReset}ersão $__version__"
 	echo -e "${CYellow} A${CReset}utor: $__author__"
 	echo -e "${CYellow} R${CReset}epositório: $__url__"
-	echo -e "${CGreen}$(print_line '=')${CReset}"
+	print_line
 }
 
 function verify_requeriments()
@@ -503,14 +503,33 @@ function create_desktop_cfg()
 	# Criar arquivo .desktop e copiar para Área de trabalho
 	cd "${INSTALATION_DIRS[dir]}"
 	./start-tor-browser.desktop --register-app
+	
+	echo -e "#!/bin/sh\n" > "${INSTALATION_DIRS[script]}"
+	echo -e "cd ${INSTALATION_DIRS[dir]}/Browser\n./start-tor-browser \$@" >> "${INSTALATION_DIRS[script]}"
+	chmod +x "${INSTALATION_DIRS[script]}"
+	chmod +x "${INSTALATION_DIRS[dir]}/Browser/start-tor-browser"
 
-	if [[ ~/'Área de Trabalho' ]]; then
-		cp "${INSTALATION_DIRS[desktop_cfg]}" ~/'Área de Trabalho'/'start-tor-browser.desktop'
-		chmod 777 ~/'Área de Trabalho'/'start-tor-browser.desktop'
+	if [[ ~/'Área de trabalho' ]]; then
+		cp "${INSTALATION_DIRS[desktop_cfg]}" ~/'Área de trabalho'/start-tor-browser.desktop
+		chmod 777 ~/'Área de trabalho'/start-tor-browser.desktop
 	elif [[ ~/'Desktop' ]]; then
-		cp "${INSTALATION_DIRS[desktop_cfg]}" ~/'Desktop'/'start-tor-browser.desktop'
-		chmod 777 ~/'Desktop'/'start-tor-browser.desktop'
+		cp "${INSTALATION_DIRS[desktop_cfg]}" ~/'Desktop'/start-tor-browser.desktop
+		chmod 777 ~/'Desktop'/start-tor-browser.desktop
 	fi
+}
+
+function openTorBrowser()
+{
+	if ! isInstalled; then return 1; fi
+	print_line
+	read -p "Deseja abrir o Tor Browser agora? [s/N]: " -t 30 -n 1 YESNO
+	echo
+	case "${YESNO,,}" in
+		s) cd "${INSTALATION_DIRS[dir]}"; ./start-tor-browser.desktop;;
+		n) ;;
+		*) ;;
+	esac
+
 }
 
 function install_file()
@@ -564,6 +583,7 @@ function install_torbrowser()
 	cd tor
 	cp -R . "${INSTALATION_DIRS[dir]}"/.
 	create_desktop_cfg
+	openTorBrowser
 }
 
 function main()
