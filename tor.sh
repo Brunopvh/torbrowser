@@ -10,7 +10,6 @@
 # - gpg - para verificar a integridade do pacote de instalação.
 # - file - para verificar as extensões de arquivo.
 # - sha256sum - verificar integridade de arquivos.
-# - awk - para processamento de textos.
 # - GNU coreutils (sed, cut, grep, ...)
 #
 #
@@ -61,13 +60,19 @@
 	exit 1
 }
 
-__version__='0.1.4'
+# ARCH deve ser 64 bits.
+[[ $(uname -m) != 'x86_64' ]] && {
+	echo -e "ERRO ... Seu sistema não é 64 bits saindo"
+	exit 1
+}
+
+__version__='0.1.5'
 __appname__='tor-installer'
 __author__='Bruno Chaves'
 __url__='https://github.com/Brunopvh/torbrowser'
 __script__=$(readlink -f "$0")
 
-# Informações padrão
+# Informações padrão (fixas)
 TOR_PROJECT_DOWNLOAD='https://www.torproject.org/download'
 TOR_ONLINE_PACKAGES='https://dist.torproject.org/torbrowser'
 TOR_INSTALLER_ONLINE='https://raw.github.com/Brunopvh/torbrowser/master/tor.sh'
@@ -98,6 +103,7 @@ DELAY='0.05'
 StatusOutput=0
 clientDownloader=null
 downloadOnly=false
+assumeYes=false
 CRed='\033[0;31m'
 CGreen='\033[0;32m'
 CYellow='\033[0;33m'
@@ -114,6 +120,8 @@ cat << EOF
    -v|--version         Mostra versão
    
    -d|--downloadonly    Somente baixa o tor em cache sem instalar
+
+   -y|--yes             Assume SIM para todas indagações.
    
    -i|--install         Baixa e instala o torbrowser
    
@@ -126,17 +134,27 @@ cat << EOF
 
    -l|--logo            Mostra o logo.
 
+   -s|--self-update     Atualiza este programa.
+
 EOF
 
 }
 
-function print_erro()
+function print_error()
 {
 	echo -e "${CRed}ERRO${CReset} ... $@"
 }
 
 function print_line()
 {
+	# Preenche uma linha completa no terminal com o caracter '-'
+	# Se for passado outro parâmetro no ARG 1 a tela será preenchida 
+	# com o ARG 1 
+	# EX:
+	#     print_line =
+	#     print_line *
+	#     print_line ~
+	# 
 	if [[ -z $1 ]]; then
 		printf "%-$(tput cols)s" | tr ' ' '-'
 	else
@@ -146,7 +164,7 @@ function print_line()
 
 function setClientDownloader()
 {
-	# Setar a ferramenta de downloads
+	# Setar a ferramenta de downloads curl|wget|aria2c
 	if [[ -x $(command -v aria2c) ]]; then
 		clientDownloader='aria2c'
 	elif [[ -x $(command -v wget) ]]; then
@@ -154,17 +172,16 @@ function setClientDownloader()
 	elif [[ -x $(command -v curl) ]]; then
 		clientDownloader='curl'
 	else
-		print_erro "instale a ferramenta curl para prosseguir ... ${CGreen}sudo apt install curl${CReset}"
+		print_error "instale a ferramenta curl para prosseguir ... ${CGreen}sudo apt install curl${CReset}"
 		return 1
 	fi
-	clientDownloader='wget'
 }
 
 function showLogo()
 {
 	echo -e "${CGreen}$(print_line '*')${CReset}"
-	echo -e "${CYellow} A${CReset}pp $__appname__"
-	echo -e "${CYellow} V${CReset}ersão $__version__"
+	echo -e "${CYellow} A${CReset}pp: $__appname__"
+	echo -e "${CYellow} V${CReset}ersão: $__version__"
 	echo -e "${CYellow} A${CReset}utor: $__author__"
 	echo -e "${CYellow} R${CReset}epositório: $__url__"
 	print_line
@@ -172,11 +189,11 @@ function showLogo()
 
 function verify_requeriments()
 {
-	local REQUERIMENTS=(gpg gpgv ping tar file)
+	local REQUERIMENTS=(gpg gpgv ping tar file sha256sum)
 
 	for REQ in "${REQUERIMENTS[@]}"; do
 			if [[ ! -x $(command -v "$REQ") ]]; then
-				print_erro "requerimento não encontrado => $REQ"
+				print_error "requerimento não encontrado ... $REQ"
 				sleep "$DELAY"
 				return 1
 				break
@@ -203,15 +220,17 @@ function clean_dirs()
 function unpack_tor()
 {
 	# $1 = arquivo a ser descomprimido.
+	# o arquivo sempre será descompactado no diretório temporário $UnapckDir
+
 	local path_file="$1"
 
 	if [[ ! -f "$path_file" ]]; then
-		print_erro "(unpack_tor) Nenhum arquivo informado como parâmetro."
+		print_error "(unpack_tor) Nenhum arquivo informado como parâmetro."
 		return 1
 	fi
 
 	if [[ ! -w "$UnpackDir" ]]; then 
-		print_erro "Você não tem permissão de escrita [-w] em ... $UnpackDir"
+		print_error "Você não tem permissão de escrita [-w] em ... $UnpackDir"
 		return 1	
 	fi
 
@@ -237,6 +256,7 @@ function importPubKey()
 	# https://support.torproject.org/tbb/how-to-verify-signature/
 	# https://keys.openpgp.org/vks/v1/by-fingerprint/EF6E286DDA85EA2A4BA7DE684E2C6E8793298290
 	# curl -s https://openpgpkey.torproject.org/.well-known/openpgpkey/torproject.org/hu/kounek7zrdx745qydx6p59t9mqjpuhdf | gpg --import -
+	
 	local TOR_DEVELOPMENT_PUB='EF6E286DDA85EA2A4BA7DE684E2C6E8793298290'
 	local temp_key=$(mktemp -u)
 	if [[ $(gpg -k | grep "$TOR_DEVELOPMENT_PUB") ]]; then
@@ -247,14 +267,13 @@ function importPubKey()
 	echo -ne "importando $url_tor_pub_key "
 	download "$url_tor_pub_key" "$temp_key" 1> /dev/null || return 1
 	if ! gpg --import "$temp_key" 1> /dev/null 2>&1; then
-		print_erro "(importPubKey)"
+		print_error "(importPubKey)"
 		return 1
 	fi
 	echo 'OK'
 	rm -rf "$temp_key" 2> /dev/null
 	unset TOR_DEVELOPMENT_PUB
 	unset temp_key
-
 }
 
 function check_signature()
@@ -270,12 +289,12 @@ function check_signature()
 	local temp_keyring=$(mktemp -u)
 
 	if [[ ! -f "$tor_pkg" ]]; then
-		print_erro "(check_signature) arquivo inválido $tor_pkg"
+		print_error "(check_signature) arquivo inválido $tor_pkg"
 		return 1
 	fi
 
 	if [[ ! -f "${tor_asc}" ]]; then
-		print_erro "(check_signature) arquivo $tor_asc não encontrado"
+		print_error "(check_signature) arquivo $tor_asc não encontrado"
 		return 1
 	fi
 
@@ -284,7 +303,7 @@ function check_signature()
 	gpg --output "$temp_keyring" --export 0xEF6E286DDA85EA2A4BA7DE684E2C6E8793298290
 	echo -ne "Verificando integridade do arquivo $(basename $tor_pkg) "
 	if ! gpgv --keyring "$temp_keyring" "$tor_asc" "$tor_pkg" 1> /dev/null 2>&1; then
-		print_erro "(check_signature)"
+		print_error "(check_signature)"
 		return 1
 	fi
 	echo 'OK'
@@ -296,7 +315,7 @@ function check_signature()
 function check_internet()
 {
 	if ! ping -c 1 8.8.8.8 1> /dev/null 2>&1; then
-		print_erro "Verifique sua conexão com a internet."
+		print_error "Verifique sua conexão com a internet."
 		sleep "$DELAY"
 		return 1
 	fi
@@ -322,7 +341,7 @@ function download()
 	}
 
 	[[ -z $2 ]] && {
-		print_erro "(download) parâmetro incorreto detectado."
+		print_error "(download) parâmetro incorreto detectado."
 		return 1
 	}
 
@@ -330,7 +349,7 @@ function download()
 	local path_file="$2"
 
 	if [[ "$clientDownloader" == 'null' ]]; then
-		print_erro "(download) Instale curl|wget|aria2c para prosseguir."
+		print_error "(download) Instale curl|wget|aria2c para prosseguir."
 		sleep "$DELAY"
 		return 1
 	fi
@@ -347,30 +366,56 @@ function download()
 		wget)
 			wget -c "$url" -O "$path_file"
 				;;
-		*) print_erro "download";;
+		*) print_error "download";;
 	esac
 	
 	[[ $? == 0 ]] && return 0
-	print_erro '(download)'
+	print_error '(download)'
 	return 1
+}
+
+function self_update()
+{
+	# Insatala a ultima versão deste programa disponível no github.
+	local temp_script_installer=$(mktemp -u)
+	local online_version_script="$__version__"
+
+	create_dirs
+	download "$TOR_INSTALLER_ONLINE" "$temp_script_installer" 1> /dev/null || return 1
+	chmod +x "$temp_script_installer"
+
+	# Setar a versão online do deste programa e comparar com a versão local.
+	online_version_script=$("$temp_script_installer" --version)
+	if [[ "$online_version_script" == "$__version__" ]]; then
+		echo -e "Você tem a última versão deste programa"
+		return 0
+	fi
+
+	question "Nova versão disponível ${CYellow}$online_version_script${CReset} - deseja atualizar" || return 1
+	echo "Instalando atualização"
+	cp "$temp_script_installer" ~/.local/bin/"$__appname__"
+	configure_user_path
+	rm -rf "$temp_script_installer" 2> /dev/null
+	unset temp_script_installer	
 }
 
 function saveOutputFile()
 {
 	# Baixar o tor e gravar no arquivo passado para opção --output.
 	if [[ -z $1 ]]; then
-		print_erro "(saveOutputFile) parâmetro incorreto detectado."
+		print_error "(saveOutputFile) parâmetro incorreto detectado."
 		return 1
 	fi
+
 	local saveFile="$1"
 
 	if [[ ! -d $(dirname "$saveFile") ]]; then
-		print_erro "(saveOutputFile) caminho inválido $saveFile"
+		print_error "(saveOutputFile) caminho inválido $saveFile"
 		return 1
 	fi
 
 	if [[ ! -w $(dirname "$saveFile") ]]; then
-		print_erro "(saveOutputFile) você não tem permissão de escrita em $(dirname $saveFile)"
+		print_error "(saveOutputFile) você não tem permissão de escrita em $(dirname $saveFile)"
 		return 1
 	fi
 
@@ -381,10 +426,9 @@ function saveOutputFile()
 
 function getHtmlText()
 {
-
 	# Função para fazer o request em páginas html e retornar o conteúdo no STDOUT.
 	if [[ -z $1 ]]; then
-		print_erro "Nenhum url foi passado como parâmetro"
+		print_error "Nenhum url foi passado como parâmetro"
 		return 1
 	fi
 
@@ -398,7 +442,7 @@ function getHtmlText()
 					;;
 		wget) wget -q -O- "$url";;
 		curl) curl -sSL "$url";;
-		*) print_erro "(getHtmlText)";;
+		*) print_error "(getHtmlText)";;
 	esac
 	rm -rf "$temp_file" 2> /dev/null
 	unset temp_file
@@ -408,20 +452,24 @@ function setOnlineValues()
 {
 	# Filtrar o url de download no html online e setar as variáveis que precisam de informações online.
 	local temp_html=$(mktemp -u)
-	if ! getHtmlText 'https://www.torproject.org/download' | grep -m 1 'torbrowser.*en-US.tar.xz' > "$temp_html"; then
-		print_erro "(setOnlineValues)"
+	local down_page='https://www.torproject.org/download'
+	if ! getHtmlText "$down_page" | grep -m 1 'torbrowser.*en-US.tar.xz' > "$temp_html"; then
+		print_error "(setOnlineValues)"
 		return 1
 	fi
 	sed -i 's|.*href="||g;s|">||g' "$temp_html"
 
 	# Formar a url de download do arquivo tar.xz apartir dos dados obtidos
-	# padrão de um url https://dist.torproject.org/torbrowser + VERSÃO + NOME_DO_PACOTE
-	tor_online_version=$(cat "$temp_html" | cut -d '/' -f 4)
-	tor_online_package=$(cat "$temp_html" | cut -d '/' -f 5)
+	# padrão de um url: 
+	#                  https://dist.torproject.org/torbrowser + VERSÃO + NOME_DO_PACOTE
+	#
+	tor_online_version=$(cut -d '/' -f 4 "$temp_html")
+	tor_online_package=$(cut -d '/' -f 5 "$temp_html")
 	url_download_torbrowser="https://dist.torproject.org/torbrowser/${tor_online_version}/${tor_online_package}"
 	url_download_torbrowser_asc="${url_download_torbrowser}.asc"
 	rm -rf "$temp_html" 2> /dev/null
 	unset temp_html
+	unset down_page
 }
 
 function isInstalled()
@@ -435,6 +483,12 @@ function isInstalled()
 
 function uninstall_torbrowser()
 {
+	if ! isInstalled; then 
+		print_error "torbrowser não está instalado."
+		return 1
+	fi
+	question "Deseja desinstalar torbrowser" || return 1
+
 	echo -ne "Desinstalando torbrowser ... "
 	for file in "${INSTALATION_DIRS[@]}"; do
 		rm -rf "$file" 2> /dev/null
@@ -518,18 +572,28 @@ function create_desktop_cfg()
 	fi
 }
 
+function question()
+{
+	[[ -z $1 ]] && return 1
+	[[ "$assumeYes" == true ]] && return 0
+
+	echo -ne "$@ [s/N]? "
+	read -n 1 -t 20 _yesno
+	echo
+	case "${_yesno,,}" in
+		s) return 0;;
+		n) return 1;;
+		*) echo "Opção incorreta"; return 1;; 
+	esac
+}
+
 function openTorBrowser()
 {
 	if ! isInstalled; then return 1; fi
 	print_line
-	read -p "Deseja abrir o Tor Browser agora? [s/N]: " -t 30 -n 1 YESNO
-	echo
-	case "${YESNO,,}" in
-		s) cd "${INSTALATION_DIRS[dir]}"; ./start-tor-browser.desktop;;
-		n) ;;
-		*) ;;
-	esac
-
+	question "Deseja abrir o Tor Browser agora" || return 1
+	cd ~/.local/bin
+	torbrowser &
 }
 
 function install_file()
@@ -544,7 +608,7 @@ function install_file()
 
 	local torFile="$1"
 	if [[ ! -f "$torFile" ]]; then
-		print_erro "(install_file) parâmetro incorreto detectado."
+		print_error "(install_file) parâmetro incorreto detectado."
 		return 1
 	fi
 	showLogo
@@ -591,6 +655,12 @@ function main()
 	verify_requeriments || return 1
 	setClientDownloader || return 1
 
+	for ARG in "${@}"; do
+		if [[ "$ARG" == '--yes' || "$ARG" == '-y' ]]; then
+			export assumeYes=true
+		fi
+	done
+
 	while [[ $1 ]]; do
 		case "$1" in
 			-h|--help) usage; return 0; break;;
@@ -601,7 +671,9 @@ function main()
 			-o|--output) shift; saveOutputFile "$@"; return "$?"; break;;
 			-f|--file) shift; install_file "$@"; return "$?"; break;;
 			-l|--logo) showLogo; return 0; break;;
-			*) print_erro "parametro incorreto detectado"; return 1; break;;
+			-s|--self-update) self_update; return 0; break;;
+			-y|--yes) ;;
+			*) print_error "parametro incorreto detectado"; return 1; break;;
 		esac
 		shift
 	done
